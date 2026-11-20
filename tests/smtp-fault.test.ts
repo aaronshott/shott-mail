@@ -24,7 +24,7 @@ test('TLS/auth failures and DATA acknowledgement loss are fail-closed without au
   assert.notEqual(await testConnection('smtp',ep,{...c,ca:undefined}),'OK');assert.equal(auths,0,'untrusted TLS must fail before AUTH');
   assert.notEqual(await testConnection('smtp',{...ep,password:randomBytes(24).toString('hex')},c),'OK');
   assert.equal(await testConnection('smtp',ep,c),'OK');
-  const l=await app.inject({method:'POST',url:'/api/login',headers:{origin:c.origin},payload:{password:c.password}});const headers={origin:c.origin,cookie:String(l.headers['set-cookie']).split(';')[0],'x-csrf-token':l.json().csrf};
+  const l=await app.inject({method:'POST',url:'/api/login',headers:{origin:c.origin},payload:{login:'admin',password:c.password}});const headers={origin:c.origin,cookie:String(l.headers['set-cookie']).split(';')[0],'x-csrf-token':l.json().csrf};
   const a=(await app.inject({method:'POST',url:'/api/accounts',headers,payload:{label:'Fault fixture',address:'work@example.test',imap:ep,smtp:ep}})).json();const id=randomUUID();
   assert.equal((await app.inject({method:'PUT',url:`/api/drafts/${id}`,headers,payload:{accountId:a.id,revision:0,to:'private@example.test',subject:'Unknown outcome',text:'keep input'}})).statusCode,200);
   const op=(await app.inject({method:'POST',url:`/api/drafts/${id}/send`,headers,payload:{revision:1}})).json();assert.equal(op.state,'outcome_unknown');assert.equal(dataCount,1);

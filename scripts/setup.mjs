@@ -2,6 +2,9 @@ import {mkdirSync,writeFileSync,existsSync} from 'node:fs';
 import {randomBytes} from 'node:crypto';import {execFileSync} from 'node:child_process';
 process.umask(0o077);mkdirSync('secrets',{recursive:true,mode:0o700});mkdirSync('data',{recursive:true,mode:0o700});
 function create(path,value){if(!existsSync(path))writeFileSync(path,value,{mode:0o600,flag:'wx'});}
+if(existsSync('data/app.sqlite')&&(!existsSync('secrets/key')||!existsSync('secrets/login'))){
+ throw new Error('EXISTING_DATABASE_REQUIRES_EXISTING_KEY_AND_LOGIN_FILE');
+}
 create('secrets/key',randomBytes(32));create('secrets/login',randomBytes(24).toString('base64url')+'\n');
 for(const user of ['work','private'])create(`secrets/${user}`,randomBytes(24).toString('base64url')+'\n');
 if(!existsSync('secrets/mail.crt')){

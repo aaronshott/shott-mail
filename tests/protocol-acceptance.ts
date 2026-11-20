@@ -7,7 +7,7 @@ const secrets=process.env.TEST_SECRET_DIR??'secrets';const ca=readFileSync(join(
 const c={dbPath:join(dir,'app.sqlite'),key:randomBytes(32),password:randomBytes(24).toString('base64url'),origin:'http://127.0.0.1:3000',secureCookie:false,allowedMail:[`${host}:1993`,`${host}:1587`],sessionMs:60000,staticRoot:resolve('dist/client'),ca,timeoutMs:10000};
 const app=await buildApp(c);const checks:string[]=[];
 try{
- const l=await app.inject({method:'POST',url:'/api/login',headers:{origin:c.origin},payload:{password:c.password}});assert.equal(l.statusCode,200);
+ const l=await app.inject({method:'POST',url:'/api/login',headers:{origin:c.origin},payload:{login:'admin',password:c.password}});assert.equal(l.statusCode,200);
  const headers={origin:c.origin,cookie:String(l.headers['set-cookie']).split(';')[0],'x-csrf-token':l.json().csrf};
  const ids:Record<string,string>={};
  for(const user of ['work','private']){

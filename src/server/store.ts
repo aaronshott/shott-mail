@@ -1,18 +1,18 @@
 import { DatabaseSync } from 'node:sqlite';
 import { openSync, closeSync, lstatSync } from 'node:fs';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { initializeSchema } from './schema.ts';
 
 export type Account = { label: string; address: string };
 export type Credentials = { imap: string; smtp: string };
+type DraftBody = {to: string; subject: string; text: string};
 
-/** Single-writer B1 persistence. The encryption key must come from a separate secret file.
- * Only credentials are encrypted; metadata/drafts need host/backup protection.
- */
+/** Single writer; credentials are encrypted, metadata/drafts need host protection. */
 export class Store {
-  private db: DatabaseSync;
+  readonly db: DatabaseSync;
   private key: Buffer;
 
-  constructor(path: string, key: Buffer, busyMs = 5000) {
+  constructor(path: string, key: Buffer, password: string, busyMs = 5000) {
     if (!Number.isSafeInteger(busyMs) || busyMs <= 0 || busyMs > 2147483647) throw new Error('INVALID_SQLITE_BUSY_TIMEOUT');
     if (key.length !== 32) throw new Error('KEY_LENGTH');
     try { closeSync(openSync(path, 'wx', 0o600)); }
@@ -22,19 +22,20 @@ export class Store {
     this.key = Buffer.from(key);
     this.db = new DatabaseSync(path);
     try {
-      // DELETE journal avoids dependence on WAL versions; no network FS support claimed.
-      this.db.exec(`PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL; PRAGMA busy_timeout=${busyMs};`);
-      this.db.exec(`CREATE TABLE IF NOT EXISTS meta (id INTEGER PRIMARY KEY CHECK(id=1), check_value TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, metadata TEXT NOT NULL, credentials TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS drafts (id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), revision INTEGER NOT NULL, body TEXT NOT NULL);`);
-      const row = this.db.prepare('SELECT check_value FROM meta WHERE id=1').get();
-      if (row) {
-        try { if (this.open(String(row.check_value), 'installation') !== 'shott-mail-key-check-v1') throw new Error(); }
+      this.db.exec(`PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL; PRAGMA busy_timeout=${busyMs}; BEGIN IMMEDIATE;`);
+      const hasMeta = this.db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='meta'").get();
+      if (hasMeta) {
+        const row = this.db.prepare('SELECT check_value FROM meta WHERE id=1').get();
+        try { if (!row || this.open(String(row.check_value), 'installation') !== 'shott-mail-key-check-v1') throw new Error(); }
         catch { throw new Error('KEY_MISMATCH'); }
-      } else {
+      }
+      initializeSchema(this.db,password);
+      if (!hasMeta) {
+        this.db.exec('CREATE TABLE meta (id INTEGER PRIMARY KEY CHECK(id=1), check_value TEXT NOT NULL)');
         this.db.prepare('INSERT INTO meta VALUES (1,?)').run(this.seal('shott-mail-key-check-v1', 'installation'));
       }
-    } catch (error) { this.db.close(); this.key.fill(0); throw error; }
+      this.db.exec("UPDATE send_operations SET state='outcome_unknown',result='{}' WHERE state IN ('preparing','submitting'); COMMIT;");
+    } catch (error) { this.close(); throw error; }
   }
 
   private seal(value: string, binding: string): string {
@@ -53,37 +54,43 @@ export class Store {
     return Buffer.concat([decipher.update(data.subarray(28)), decipher.final()]).toString('utf8');
   }
 
-  putAccount(id: string, metadata: Account, credentials: Credentials): void {
-    this.db.prepare(`INSERT INTO accounts VALUES (?,?,?) ON CONFLICT(id) DO UPDATE
-      SET metadata=excluded.metadata, credentials=excluded.credentials`).run(
-      id, JSON.stringify(metadata), this.seal(JSON.stringify(credentials), `account:${id}`));
+  putAccount(owner: number, id: string, metadata: Account, credentials: Credentials): void {
+    const result = this.db.prepare(`INSERT INTO mailboxes (owner_id,id,metadata,credentials) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE
+      SET metadata=excluded.metadata, credentials=excluded.credentials WHERE mailboxes.owner_id=excluded.owner_id`).run(
+      owner,id,JSON.stringify(metadata),this.seal(JSON.stringify(credentials),`account:${id}`));
+    if (result.changes!==1) throw new Error('ACCOUNT_NOT_FOUND');
   }
 
-  listAccounts(): (Account & { id: string })[] {
-    return this.db.prepare('SELECT id,metadata FROM accounts ORDER BY id').all().map(row =>
+  listAccounts(owner: number): (Account & { id: string })[] {
+    return this.db.prepare('SELECT id,metadata FROM mailboxes WHERE owner_id=? ORDER BY id').all(owner).map(row =>
       ({ ...JSON.parse(String(row.metadata)), id: String(row.id) }));
   }
 
-  credentials(id: string): Credentials {
-    const row = this.db.prepare('SELECT credentials FROM accounts WHERE id=?').get(id);
+  account(owner:number,id:string): Account & {id:string} {
+    const row = this.db.prepare('SELECT metadata FROM mailboxes WHERE owner_id=? AND id=?').get(owner,id);
+    if (!row) throw new Error('ACCOUNT_NOT_FOUND');
+    return {...JSON.parse(String(row.metadata)),id};
+  }
+
+  credentials(owner: number, id: string): Credentials {
+    const row = this.db.prepare('SELECT credentials FROM mailboxes WHERE owner_id=? AND id=?').get(owner,id);
     if (!row) throw new Error('ACCOUNT_NOT_FOUND');
     return JSON.parse(this.open(String(row.credentials), `account:${id}`));
   }
 
-  saveDraft(id: string, accountId: string, expectedRevision: number, body: {to: string; subject: string; text: string}): number {
-    if (!this.db.prepare('SELECT id FROM accounts WHERE id=?').get(accountId)) throw new Error('ACCOUNT_NOT_FOUND');
-    const result = this.db.prepare(`INSERT INTO drafts (id,account_id,revision,body)
-      SELECT ?,?,1,? WHERE ?=0
-      ON CONFLICT(id) DO NOTHING`).run(id,accountId,JSON.stringify(body),expectedRevision);
+  saveDraft(owner: number, id: string, accountId: string, expectedRevision: number, body: DraftBody): number {
+    if (!this.db.prepare('SELECT 1 FROM mailboxes WHERE owner_id=? AND id=?').get(owner,accountId)) throw new Error('ACCOUNT_NOT_FOUND');
+    const result = this.db.prepare(`INSERT INTO user_drafts (owner_id,id,account_id,revision,body)
+      SELECT ?,?,?,1,? WHERE ?=0 ON CONFLICT(owner_id,id) DO NOTHING`).run(owner,id,accountId,JSON.stringify(body),expectedRevision);
     if (result.changes === 1) return 1;
-    const updated = this.db.prepare(`UPDATE drafts SET body=?,revision=revision+1
-      WHERE id=? AND account_id=? AND revision=?`).run(JSON.stringify(body),id,accountId,expectedRevision);
+    const updated = this.db.prepare(`UPDATE user_drafts SET body=?,revision=revision+1
+      WHERE owner_id=? AND id=? AND account_id=? AND revision=?`).run(JSON.stringify(body),owner,id,accountId,expectedRevision);
     if (updated.changes !== 1) throw new Error('DRAFT_CONFLICT');
     return expectedRevision + 1;
   }
 
-  draft(id: string): {id: string; accountId: string; revision: number; body: {to: string; subject: string; text: string}} {
-    const row = this.db.prepare('SELECT * FROM drafts WHERE id=?').get(id);
+  draft(owner: number, id: string): {id: string; accountId: string; revision: number; body: DraftBody} {
+    const row = this.db.prepare('SELECT * FROM user_drafts WHERE owner_id=? AND id=?').get(owner,id);
     if (!row) throw new Error('DRAFT_NOT_FOUND');
     return {id:String(row.id),accountId:String(row.account_id),revision:Number(row.revision),body:JSON.parse(String(row.body))};
   }
