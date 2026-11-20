@@ -4,7 +4,7 @@ if(process.env.CONFIRM_SYNTHETIC_FIXTURE!=='yes')throw new Error('Explicit isola
 const host=process.env.FIXTURE_HOST??'mail';if(!['mail','127.0.0.1'].includes(host))throw new Error('Only isolated fixture or loopback allowed');
 const base=process.env.TEST_DATA_DIR??'.test-data';mkdirSync(base,{recursive:true,mode:0o700});const dir=mkdtempSync(resolve(base,'protocol-'));
 const secrets=process.env.TEST_SECRET_DIR??'secrets';const ca=readFileSync(join(secrets,'mail.crt'),'utf8');
-const c={dbPath:join(dir,'app.sqlite'),key:randomBytes(32),password:randomBytes(24).toString('base64url'),origin:'http://127.0.0.1:3000',secureCookie:false,allowedMail:[`${host}:1993`,`${host}:1587`],sessionMs:60000,staticRoot:resolve('dist/client'),ca,timeoutMs:10000};
+const c={dbPath:join(dir,'app.sqlite'),key:randomBytes(32),password:randomBytes(24).toString('base64url'),origin:'http://127.0.0.1:3000',secureCookie:false,mailMode:'fixture' as const,allowedMail:[`${host}:1993`,`${host}:1587`],sessionMs:60000,staticRoot:resolve('dist/client'),ca,timeoutMs:10000};
 const app=await buildApp(c);const checks:string[]=[];
 try{
  const l=await app.inject({method:'POST',url:'/api/login',headers:{origin:c.origin},payload:{login:'admin',password:c.password}});assert.equal(l.statusCode,200);

@@ -9,9 +9,9 @@ import {startMailFixture} from './mail-fixture.ts';
 test('admin provisions two independent users; private unified inboxes, credentials, draft and send operations over loopback TLS',async()=>{
  mkdirSync('.test-data',{recursive:true,mode:0o700});const dir=mkdtempSync(resolve('.test-data/multiuser-'));
  const secret=()=>randomBytes(24).toString('hex');
- const c={dbPath:join(dir,'app.sqlite'),key:randomBytes(32),password:secret(),origin:'http://127.0.0.1:3000',secureCookie:false,sessionMs:60000,staticRoot:resolve('dist/client'),loginAttempts:30,timeoutMs:3000};
+ const c={dbPath:join(dir,'app.sqlite'),key:randomBytes(32),password:secret(),origin:'http://127.0.0.1:3000',secureCookie:false,sessionMs:600000,staticRoot:resolve('dist/client'),loginAttempts:30,timeoutMs:3000};
  const mail=await startMailFixture(dir);
- const app=await buildApp({...c,ca:mail.ca,allowedMail:mail.allowedMail});
+ const app=await buildApp({...c,mailMode:'fixture',ca:mail.ca,allowedMail:mail.allowedMail});
  type Headers=Record<string,string>;
  const req=(method:'GET'|'POST'|'PUT'|'DELETE',url:string,headers:Headers={},payload?:object)=>app.inject({method,url,headers:{origin:c.origin,...headers},...(payload?{payload}:{})});
  const check=async(method:Parameters<typeof req>[0],url:string,headers:Headers,payload?:object,status=200)=>{

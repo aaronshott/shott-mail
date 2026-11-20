@@ -18,7 +18,7 @@ test('TLS/auth failures and DATA acknowledgement loss are fail-closed without au
  });
  await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));const port=(server.address() as any).port;
  const ep={host:'127.0.0.1',port,tls:'implicit' as const,user:'work@example.test',password};
- const c={dbPath:join(dir,'app.sqlite'),key:randomBytes(32),password:randomBytes(24).toString('base64url'),origin:'http://127.0.0.1:3000',secureCookie:false,allowedMail:[`127.0.0.1:${port}`],sessionMs:60000,staticRoot:resolve('dist/client'),ca:cert,timeoutMs:1500};
+ const c={dbPath:join(dir,'app.sqlite'),key:randomBytes(32),password:randomBytes(24).toString('base64url'),origin:'http://127.0.0.1:3000',secureCookie:false,mailMode:'fixture' as const,allowedMail:[`127.0.0.1:${port}`],sessionMs:60000,staticRoot:resolve('dist/client'),ca:cert,timeoutMs:1500};
  const app=await buildApp(c);
  try{
   assert.notEqual(await testConnection('smtp',ep,{...c,ca:undefined}),'OK');assert.equal(auths,0,'untrusted TLS must fail before AUTH');

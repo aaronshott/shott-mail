@@ -3,6 +3,7 @@ import {randomUUID} from 'node:crypto';
 import type {FastifyInstance} from 'fastify';
 import {Store} from './store.ts';
 import {smtp,testConnection,type Endpoint,type MailPolicy} from './mail.ts';
+import {assertEndpoint} from './mail-policy.ts';
 const idSchema=z.string().uuid();
 const endpoint=z.object({host:z.string().min(1).max(253).regex(/^[a-zA-Z0-9.:-]+$/),port:z.number().int().min(1).max(65535),tls:z.enum(['implicit','starttls']),user:z.string().min(1).max(320),password:z.string().max(1024).optional()}).strict();
 const accountSchema=z.object({label:z.string().min(1).max(80),address:z.email().max(320),imap:endpoint,smtp:endpoint}).strict();
@@ -17,6 +18,8 @@ export function routes(app:FastifyInstance,store:Store,c:MailPolicy){
  };
  function saveAccount(owner:number,body:unknown,id:string,update:boolean){
   const value=accountSchema.parse(body);const old=update?store.credentials(owner,id):undefined;
+  assertEndpoint('imap',value.imap,c);assertEndpoint('smtp',value.smtp,c);
+  if(c.mailMode==='public'&&!update&&Number(db.prepare('SELECT count(*) AS n FROM mailboxes WHERE owner_id=?').get(owner)?.n)>=10)throw new Error('ACCOUNT_LIMIT');
   const secrets={imap:value.imap.password||old?.imap,smtp:value.smtp.password||old?.smtp};
   if(!secrets.imap||!secrets.smtp)throw new Error('PASSWORD_REQUIRED');
   const {password:_i,...imap}=value.imap;const {password:_s,...smtp}=value.smtp;

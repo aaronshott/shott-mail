@@ -1,11 +1,12 @@
-# Shott Mail — multi-user testimplementatie (MAILCLIENT-10)
+# Shott Mail — multi-user mailclient (MAILCLIENT-12)
 
 Echte TypeScript/Fastify/SQLite-backend en Svelte-interface; geen RAM-demo.
 Dit is nog GEEN geaccepteerde B1 of productieversie. Lokale build, tests en
 browserinteracties zijn uitgevoerd. De positieve IMAP→lezen→SMTP→IMAP-keten
 tegen de hieronder meegeleverde Dovecot/Postfix-fixture en alle Dockercriteria
 zijn nog ONGETEST. De Hermes-host heeft geen Docker; installeer dat daar niet.
-Gebruik alleen synthetische accounts. Geen persoonlijke mailboxen/publieke mail.
+Gebruik voor ontwikkeling en QA alleen synthetische accounts. De publieke modus
+is geïmplementeerd maar niet tegen externe providers of op Portainer beproefd.
 
 ## Wat werkt en wat nog niet bewezen is
 
@@ -24,6 +25,54 @@ Geen bijlagedownload/upload, IMAP Drafts/Sent-synchronisatie, autosave, CC/BCC,
 zoekfunctie, herstelworkflow voor verzending, wachtwoordwijzigings-UI,
 mailboxbeheer of productiehardening. Bijlagen worden alleen genoemd; geen
 schijnknoppen. Snooze en installeerbare PWA blijven verplicht voor v1, buiten B1.
+
+## Externe mailboxen en Portainer (pas na onafhankelijke review)
+
+Gebruikers voegen hun eigen account toe via **Accounts**. Vul voor IMAP en SMTP
+de openbare DNS-hostnaam, gebruikersnaam en het providerwachtwoord of appwachtwoord
+in. IMAP: 993 impliciete TLS of 143 verplichte STARTTLS; SMTP-submission: 465
+impliciete TLS of 587 verplichte STARTTLS. Geen IP-adressen als host, poort 25,
+onbeveiligde verbinding, certificaatuitzondering, OAuth of autodiscovery. Bewaren
+doet geen DNS of mailverkeer. **Opgeslagen instellingen testen** geeft resultaat
+per protocol, zonder testmail. De provider blijft verantwoordelijk voor auth,
+toegestane afzenders en aflevering. De app biedt geen inkomende SMTP/relay.
+
+Voor de bestaande Portainer-stack gebruik je uitsluitend `compose.portainer.yaml`,
+niet het lokale fixturebestand `compose.yaml`. Behoud stacknaam/endpoint, bestaande
+HTTPS-proxy voor `shottmail.shott.nl` en LAN-bind `192.168.1.10:3000`. Beperk toegang
+tot de backendpoort tot de proxy en vertrouwde beheerinfrastructuur. Pas geen
+Compose-instellingen aan voor individuele mailboxen.
+
+1. Exporteer de bestaande stackconfig, variabelen en image/build-referenties. Inspecteer
+   de bestaande mounts: noteer de concrete Docker-volumenamen voor `app-data`,
+   `app-secrets` en `fixture-mail`; ga niet uit van een naamvoorvoegsel. Stop de
+   schrijvers en maak één consistente, beschermde backup van alle drie volumes
+   (incl. SQLite-journal, originele sleutel/login en fixturebestanden). Test
+   herstel op kopieën; draai nooit twee apps op dezelfde database.
+2. Stel `SHOTT_MAIL_COMMIT` in op de gereviewde volledige Git-SHA, en
+   `SHOTT_MAIL_DATA_VOLUME` en `SHOTT_MAIL_SECRETS_VOLUME` op de geverifieerde
+   bestaande namen. Render en controleer vóór de update de buildref, mounts en
+   poort. Bestaande database en secrets zijn verplicht; voer geen setup uit om
+   ontbrekende data te repareren. Behoud UID:GID 1000:1000 en bestaande rechten.
+3. Werk alleen de bestaande stack bij na akkoord. Laat de oude fixture gestopt;
+   behoud het fixturevolume en de secrets, ook als ze niet meer gebruikt worden.
+   Gebruik geen `down -v`, volumeprune of automatische updates. Oude fixtureaccounts
+   blijven opgeslagen maar kunnen in publieke modus niet verbinden. Bewerk ze
+   bewust of voeg afzonderlijke accounts toe. Bij terugval: stop schrijvers,
+   bewaar zo nodig de toestand na upgrade afzonderlijk, herstel de volledige
+   pre-upgradeset op gecontroleerde volumes plus de oude stackconfig en buildref.
+
+De publieke modus neemt alle ontvangen A- en AAAA-antwoorden mee: één verboden
+antwoord weigert de hele poging. De clients kiezen één numeriek adres per operatie
+zonder DNS-fallback en verifiëren TLS 1.2+ tegen de oorspronkelijke hostnaam en
+systeemroots. Dit controleert adresbereik, niet waar hostrouting/NAT dat IP werkelijk
+aflevert. Gebruik vertrouwde DNS en beperk egress op de host tot DNS en de genoemde
+mailpoorten; blokkeer interne netwerken en publieke IP-aliassen die intern eindigen.
+Er geldt een limiet van tien nieuwe/totale accounts per eigenaar (bestaande worden
+niet verwijderd), acht gelijktijdige mailverzoeken per proces en twintig per gebruiker
+per minuutvenster. DNS-, verbindings- en inactiviteitstime-outs zijn geen harde
+totale deadline voor een actieve sessie. Er is geen automatische failover tussen
+geverifieerde IP's; een onbereikbare eerste keuze kan dus tot een fout leiden.
 
 ## Lokale uitvoering zonder Docker
 
@@ -158,8 +207,9 @@ als bewijs; een scriptbestand of `compose config` is geen PASS.
   beveilig host, schijf en backups. Hostbeheerder is vertrouwd.
 - Sessies: random cookie, server bewaart alleen tokenhash, HttpOnly/SameSite=Strict,
   Secure bij HTTPS, oorsprong + CSRF voor mutaties. Geen proxy-userheaders vertrouwen.
-- MAIL_ALLOWLIST is een door beheerder beheerde exacte host:poort-lijst; standaard
-  leeg bij lokale start. Compose staat alleen de fixture toe. Geen TLS-ignoreoptie.
+- `MAIL_MODE` is standaard `disabled`. De lokale fixture-Compose kiest expliciet
+  `fixture` op een intern Docker-netwerk en gebruikt `MAIL_ALLOWLIST` (exacte
+  host:poort-paren) en `MAIL_CA_FILE`. `public` aanvaardt geen fixture-instellingen.
 - Configureerbaar/provisional: SESSION_MS, MAX_MESSAGE_BYTES, INBOX_PAGE_SIZE,
   MAIL_TIMEOUT_MS, LOGIN_ATTEMPTS_PER_MINUTE, BODY_LIMIT_BYTES, MAX_DRAFT_CHARS
   en SQLITE_BUSY_MS. Geen door Aäron vastgestelde normen. Configureer bodylimiet
