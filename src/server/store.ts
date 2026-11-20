@@ -12,7 +12,8 @@ export class Store {
   private db: DatabaseSync;
   private key: Buffer;
 
-  constructor(path: string, key: Buffer) {
+  constructor(path: string, key: Buffer, busyMs = 5000) {
+    if (!Number.isSafeInteger(busyMs) || busyMs <= 0 || busyMs > 2147483647) throw new Error('INVALID_SQLITE_BUSY_TIMEOUT');
     if (key.length !== 32) throw new Error('KEY_LENGTH');
     try { closeSync(openSync(path, 'wx', 0o600)); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
@@ -22,7 +23,7 @@ export class Store {
     this.db = new DatabaseSync(path);
     try {
       // DELETE journal avoids dependence on WAL versions; no network FS support claimed.
-      this.db.exec('PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;');
+      this.db.exec(`PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL; PRAGMA busy_timeout=${busyMs};`);
       this.db.exec(`CREATE TABLE IF NOT EXISTS meta (id INTEGER PRIMARY KEY CHECK(id=1), check_value TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, metadata TEXT NOT NULL, credentials TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS drafts (id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), revision INTEGER NOT NULL, body TEXT NOT NULL);`);
