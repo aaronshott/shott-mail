@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+secrets/
+.test-data/
+*.sqlite*
+*.pem
+*.key
+coverage/
+playwright-report/
+test-results/
