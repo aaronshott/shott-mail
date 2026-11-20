@@ -1,0 +1,48 @@
+# Upgrade the existing stack in place. Set the three required Portainer variables
+# from the reviewed commit and the actual existing Docker mounts; see README.
+name: shott-mail-b1
+services:
+  app:
+    build: "https://github.com/aaronshott/shott-mail.git#${SHOTT_MAIL_COMMIT:?Set exact reviewed Git commit}"
+    user: "1000:1000"
+    init: true
+    restart: unless-stopped
+    ports:
+      - "192.168.1.10:3000:3000"
+    environment:
+      APP_ORIGIN: "https://shottmail.shott.nl"
+      BIND_HOST: 0.0.0.0
+      PORT: "3000"
+      DB_PATH: /app/data/app.sqlite
+      KEY_FILE: /app/secrets/key
+      PASSWORD_FILE: /app/secrets/login
+      REQUIRE_EXISTING_DB: "yes"
+      MAIL_MODE: public
+      SESSION_MS: "${SESSION_MS:-28800000}"
+      MAX_MESSAGE_BYTES: "${MAX_MESSAGE_BYTES:-2097152}"
+      INBOX_PAGE_SIZE: "${INBOX_PAGE_SIZE:-50}"
+      MAIL_TIMEOUT_MS: "${MAIL_TIMEOUT_MS:-10000}"
+      LOGIN_ATTEMPTS_PER_MINUTE: "${LOGIN_ATTEMPTS_PER_MINUTE:-10}"
+      BODY_LIMIT_BYTES: "${BODY_LIMIT_BYTES:-262144}"
+      MAX_DRAFT_CHARS: "${MAX_DRAFT_CHARS:-200000}"
+      SQLITE_BUSY_MS: "${SQLITE_BUSY_MS:-5000}"
+    volumes:
+      - app-data:/app/data
+      - app-secrets:/app/secrets:ro
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [frontend]
+networks:
+  frontend:
+    driver: bridge
+volumes:
+  app-data:
+    external: true
+    name: "${SHOTT_MAIL_DATA_VOLUME:?Set the verified existing app-data volume name}"
+  app-secrets:
+    external: true
+    name: "${SHOTT_MAIL_SECRETS_VOLUME:?Set the verified existing app-secrets volume name}"
+# The old fixture-mail volume is intentionally not attached or managed here.
+# Preserve it and its fixture secrets for backup/rollback; never prune it.

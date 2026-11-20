@@ -10,7 +10,8 @@ import {inboxRoutes} from './inbox.ts';
 import staticPlugin from '@fastify/static';
 import {existsSync} from 'node:fs';
 
-export type Config={dbPath:string;key:Buffer;password:string;origin:string;secureCookie:boolean;allowedMail:string[];sessionMs:number;staticRoot:string;ca?:string;dir?:string;maxMessageBytes?:number;pageSize?:number;timeoutMs?:number;loginAttempts?:number;maxDraftChars?:number;bodyLimit?:number;sqliteBusyMs?:number};
+import type {MailPolicy} from './mail-policy.ts';
+export type Config=MailPolicy & {dbPath:string;key:Buffer;password:string;origin:string;secureCookie:boolean;sessionMs:number;staticRoot:string;dir?:string;loginAttempts?:number;bodyLimit?:number;sqliteBusyMs?:number};
 type Principal={userId:number;login:string;role:'admin'|'user';csrf:string};
 declare module 'fastify' { interface FastifyRequest { principal:Principal|null } }
 const digest=(s:string)=>createHash('sha256').update(s).digest('hex');
@@ -89,8 +90,24 @@ export async function buildApp(c:Config){
    return reply.code(201).send({login,role:'user'});
   }finally{hashing=false;}
  });
- app.get('/api/config',async()=>({maxDraftChars:c.maxDraftChars??200000}));
+ app.get('/api/config',async()=>({maxDraftChars:c.maxDraftChars??200000,mailMode:c.mailMode??'disabled'}));
  app.get('/api/accounts',async req=>store.listAccounts(req.principal!.userId));
+ if(c.mailMode==='public'){
+  const networkRoutes=new Set(['/api/accounts/:id/test','/api/drafts/:id/send','/api/inbox','/api/messages/:account/:validity/:uid']);
+  const requests=new Map<number,number>();let windowEnd=0,active=0;
+  app.addHook('onRoute',route=>{
+   if(!networkRoutes.has(route.url))return;
+   const handler=route.handler;
+   route.handler=async function(req,reply){
+    const user=req.principal!.userId;
+    const now=Date.now();if(now>=windowEnd){requests.clear();windowEnd=now+60000;}
+    const used=requests.get(user)??0;
+    if(active>=8||used>=20)return reply.code(429).send({error:'TRY_LATER'});
+    requests.set(user,used+1);active++;
+    try{return await handler.call(this,req,reply);}finally{active--;}
+   };
+  });
+ }
  routes(app,store,c);
  inboxRoutes(app,store,c);
  if(existsSync(c.staticRoot))await app.register(staticPlugin,{root:c.staticRoot,index:['index.html']});

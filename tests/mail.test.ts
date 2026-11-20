@@ -13,11 +13,11 @@ test('disallowed mail endpoint refuses before network; absent STARTTLS never sen
  let observed='';const sockets=new Set<any>();
  const server=createServer(s=>{sockets.add(s);s.on('close',()=>sockets.delete(s));s.write('220 isolated fault fixture\r\n');s.on('data',data=>{observed+=data.toString();s.write('250 isolated-no-starttls\r\n');});});
  await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));const port=(server.address() as any).port;
- const endpoint={host:'127.0.0.1',port,tls:'starttls',user:'synthetic',password:randomBytes(24).toString('hex')};
+ const endpoint={host:'127.0.0.1',port,tls:'starttls' as const,user:'synthetic',password:randomBytes(24).toString('hex')};
  try{
   assert.equal(await m!.testConnection('smtp',endpoint,{allowedMail:[]}), 'POLICY');
   assert.equal(observed,'');
-  assert.notEqual(await m!.testConnection('smtp',endpoint,{allowedMail:[`127.0.0.1:${port}`]}),'OK');
+  assert.notEqual(await m!.testConnection('smtp',endpoint,{mailMode:'fixture',allowedMail:[`127.0.0.1:${port}`]}),'OK');
   assert.equal(/AUTH/i.test(observed),false);
  }finally{for(const s of sockets)s.destroy();await new Promise<void>(r=>server.close(()=>r()));}
 });

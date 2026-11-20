@@ -14,6 +14,7 @@ services:
       DB_PATH: /app/data/app.sqlite
       KEY_FILE: /app/secrets/key
       PASSWORD_FILE: /app/secrets/login
+      MAIL_MODE: fixture
       MAIL_CA_FILE: /app/secrets/mail.crt
       MAIL_ALLOWLIST: mail:1993,mail:1587
       SESSION_MS: "${SESSION_MS:-28800000}"

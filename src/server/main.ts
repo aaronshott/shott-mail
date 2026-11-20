@@ -1,4 +1,4 @@
-import {readFileSync,lstatSync} from 'node:fs';
+import {readFileSync,lstatSync,existsSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {buildApp,type Config} from './app.ts';
 import {z} from 'zod';
@@ -9,7 +9,14 @@ const origin=z.url().parse(process.env.APP_ORIGIN??'http://127.0.0.1:3000');cons
 if(url.origin!==origin)throw new Error('ORIGIN_MUST_NOT_INCLUDE_PATH');
 const secureCookie=url.protocol==='https:';
 if(!secureCookie&&!['127.0.0.1','localhost','[::1]'].includes(url.hostname))throw new Error('HTTPS_REQUIRED_EXCEPT_LOOPBACK');
-const config:Config={dbPath:resolve(process.env.DB_PATH??'data/app.sqlite'),key:secret(process.env.KEY_FILE??'secrets/key'),password:secret(process.env.PASSWORD_FILE??'secrets/login').toString().trim(),origin,secureCookie,allowedMail:(process.env.MAIL_ALLOWLIST??'').split(',').filter(Boolean),sessionMs:positive(process.env.SESSION_MS,28800000),staticRoot:resolve('dist/client'),...(process.env.MAIL_CA_FILE?{ca:readFileSync(process.env.MAIL_CA_FILE,'utf8')}:{}),maxMessageBytes:positive(process.env.MAX_MESSAGE_BYTES,2097152),pageSize:positive(process.env.INBOX_PAGE_SIZE,50),timeoutMs:positive(process.env.MAIL_TIMEOUT_MS,10000),loginAttempts:positive(process.env.LOGIN_ATTEMPTS_PER_MINUTE,10),bodyLimit:positive(process.env.BODY_LIMIT_BYTES,262144),maxDraftChars:positive(process.env.MAX_DRAFT_CHARS,200000),sqliteBusyMs:positive(process.env.SQLITE_BUSY_MS,5000)};
+const mailMode=z.enum(['disabled','fixture','public']).parse(process.env.MAIL_MODE??'disabled');
+const caFile=process.env.MAIL_CA_FILE;
+const allowedMail=(process.env.MAIL_ALLOWLIST??'').split(',').filter(Boolean);
+if(mailMode==='fixture'&&(!caFile||!allowedMail.length))throw new Error('FIXTURE_CONFIG_REQUIRED');
+if(mailMode!=='fixture'&&(caFile||allowedMail.length))throw new Error('FIXTURE_CONFIG_NOT_ALLOWED');
+const dbPath=resolve(process.env.DB_PATH??'data/app.sqlite');
+if(process.env.REQUIRE_EXISTING_DB==='yes'&&!existsSync(dbPath))throw new Error('EXISTING_DATABASE_REQUIRED');
+const config:Config={dbPath,key:secret(process.env.KEY_FILE??'secrets/key'),password:secret(process.env.PASSWORD_FILE??'secrets/login').toString().trim(),origin,secureCookie,mailMode,allowedMail,sessionMs:positive(process.env.SESSION_MS,28800000),staticRoot:resolve('dist/client'),...(caFile?{ca:readFileSync(caFile,'utf8')}:{}),maxMessageBytes:positive(process.env.MAX_MESSAGE_BYTES,2097152),pageSize:positive(process.env.INBOX_PAGE_SIZE,50),timeoutMs:z.coerce.number().int().min(100).max(30000).parse(process.env.MAIL_TIMEOUT_MS??10000),loginAttempts:positive(process.env.LOGIN_ATTEMPTS_PER_MINUTE,10),bodyLimit:positive(process.env.BODY_LIMIT_BYTES,262144),maxDraftChars:positive(process.env.MAX_DRAFT_CHARS,200000),sqliteBusyMs:positive(process.env.SQLITE_BUSY_MS,5000)};
 const app=await buildApp(config);
 await app.listen({host:process.env.BIND_HOST??'127.0.0.1',port:positive(process.env.PORT,3000)});
 for(const signal of ['SIGINT','SIGTERM'] as const)process.on(signal,()=>{app.close().then(()=>process.exit(0));});
