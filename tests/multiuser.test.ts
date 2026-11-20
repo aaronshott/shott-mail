@@ -1,0 +1,96 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {randomBytes,randomUUID} from 'node:crypto';
+import {mkdirSync,mkdtempSync,rmSync} from 'node:fs';
+import {join,resolve} from 'node:path';
+import {buildApp} from '../src/server/app.ts';
+import {startMailFixture} from './mail-fixture.ts';
+
+test('admin provisions two independent users; private unified inboxes, credentials, draft and send operations over loopback TLS',async()=>{
+ mkdirSync('.test-data',{recursive:true,mode:0o700});const dir=mkdtempSync(resolve('.test-data/multiuser-'));
+ const secret=()=>randomBytes(24).toString('hex');
+ const c={dbPath:join(dir,'app.sqlite'),key:randomBytes(32),password:secret(),origin:'http://127.0.0.1:3000',secureCookie:false,sessionMs:60000,staticRoot:resolve('dist/client'),loginAttempts:30,timeoutMs:3000};
+ const mail=await startMailFixture(dir);
+ const app=await buildApp({...c,ca:mail.ca,allowedMail:mail.allowedMail});
+ type Headers=Record<string,string>;
+ const req=(method:'GET'|'POST'|'PUT'|'DELETE',url:string,headers:Headers={},payload?:object)=>app.inject({method,url,headers:{origin:c.origin,...headers},...(payload?{payload}:{})});
+ const check=async(method:Parameters<typeof req>[0],url:string,headers:Headers,payload?:object,status=200)=>{
+  const response=await req(method,url,headers,payload);assert.equal(response.statusCode,status,`${method} ${url} ${response.statusCode}`);return response.json();
+ };
+ const signIn=async(login:string,password:string,role:string)=>{
+  const res=await req('POST','/api/login',{}, {login,password});assert.equal(res.statusCode,200);
+  const session=res.json();assert.equal(session.role,role);assert.equal(session.login,login.toLowerCase());
+  return {cookie:String(res.headers['set-cookie']).split(';')[0],'x-csrf-token':String(session.csrf)};
+ };
+ try{
+  const pwAlice=secret(),pwBob=secret();
+  await check('POST','/api/admin/users',{}, {login:'alice',password:pwAlice},401);
+  await check('POST','/api/login',{}, {password:c.password},401);
+  const admin=await signIn('admin',c.password,'admin');
+  await check('POST','/api/admin/users',{cookie:admin.cookie},{login:'alice',password:pwAlice},403);
+  await check('POST','/api/admin/users',{...admin,origin:'https://wrong.invalid'},{login:'alice',password:pwAlice},403);
+  await check('POST','/api/admin/users',admin,{login:'invalidrole',password:secret(),role:'admin'},400);
+  await check('POST','/api/admin/users',admin,{login:'alice',password:pwAlice},201);
+  await check('POST','/api/admin/users',admin,{login:' ALICE ',password:secret()},409);
+  await check('POST','/api/admin/users',admin,{login:'ADMIN',password:secret()},409);
+  await check('POST','/api/admin/users',admin,{login:'bob',password:pwBob},201);
+  assert.deepEqual(await check('GET','/api/admin/users',admin),[{login:'admin',role:'admin'},{login:'alice',role:'user'},{login:'bob',role:'user'}]);
+  await check('POST','/api/login',{}, {login:'alice',password:pwBob},401);
+  const alice=await signIn('ALICE',pwAlice,'user'),bob=await signIn('bob',pwBob,'user');
+  await check('GET','/api/admin/users',bob,undefined,403);
+  await check('POST','/api/admin/users',{...bob,'x-user-id':'1','x-role':'admin'},{login:'bad',password:secret()},403);
+  await check('GET','/api/accounts',{...alice,cookie:bob.cookie},undefined,401);
+  const workBox=mail.mailbox('work'),privateBox=mail.mailbox('private'),bobBox=mail.mailbox('other');
+  await check('POST','/api/accounts',alice,{...workBox,ownerId:1},400);
+  const work=(await check('POST','/api/accounts',alice,workBox)).id;
+  const privateId=(await check('POST','/api/accounts',alice,privateBox)).id;
+  const other=(await check('POST','/api/accounts',bob,bobBox)).id;
+  const lists=await Promise.all([alice,bob,admin].map(headers=>check('GET','/api/accounts',headers)));
+  assert.deepEqual(lists.map(list=>list.map((a:{id:string})=>a.id).sort()),[[work,privateId].sort(),[other],[]]);
+  assert.ok(!JSON.stringify(lists).includes(workBox.imap.password),'credentials are not returned');
+  await check('PUT',`/api/accounts/${work}`,alice,{...workBox,label:'Updated',imap:{...workBox.imap,password:''},smtp:{...workBox.smtp,password:''}});
+  assert.deepEqual(await check('POST',`/api/accounts/${work}/test`,alice,{}),{imap:'OK',smtp:'OK'});
+  const all=await check('GET','/api/inbox?account=all',alice);
+  assert.deepEqual(all.errors,[]);
+  assert.deepEqual(all.messages.map((m:{accountId:string})=>m.accountId).sort(),[work,privateId].sort());
+  const item=all.messages.find((m:{accountId:string})=>m.accountId===work);
+  assert.deepEqual((await check('GET',`/api/inbox?account=${work}`,alice)).messages.map((m:{accountId:string})=>m.accountId),[work]);
+  assert.deepEqual((await check('GET','/api/inbox',bob)).messages.map((m:{accountId:string})=>m.accountId),[other]);
+  assert.deepEqual(await check('GET','/api/inbox',admin),{messages:[],errors:[],hasMore:false});
+  const messageUrl=`/api/messages/${work}/${item.validity}/${item.uid}`;
+  assert.equal((await check('GET',messageUrl,alice)).text.trim(),'Private body for work@example.test');
+  const draftId=randomUUID(),draftUrl=`/api/drafts/${draftId}`;
+  const draft={accountId:work,revision:0,to:'other@example.test',subject:'Synthetic Alice delivery',text:'Synthetic delivery body'};
+  await check('PUT',draftUrl,alice,draft);
+  const sent=await check('POST',`${draftUrl}/send`,alice,{revision:1});assert.equal(sent.state,'accepted');
+  assert.deepEqual(await check('POST',`${draftUrl}/send`,alice,{revision:1}),sent);
+  assert.equal(mail.metrics().deliveries,1);
+  const bobInbox=await check('GET','/api/inbox',bob);
+  const delivered=bobInbox.messages.find((m:{subject:string})=>m.subject===draft.subject);
+  assert.ok(delivered,'delivered locally to Bob’s mailbox');
+  const received=await check('GET',`/api/messages/${other}/${delivered.validity}/${delivered.uid}`,bob);
+  assert.equal(received.text.trim(),draft.text);assert.match(received.from,/work@example\.test/);
+  const before=mail.metrics();
+  for(const headers of [bob,admin]){
+   await check('GET',`/api/inbox?account=${work}`,headers,undefined,400);
+   await check('GET',messageUrl,headers,undefined,400);
+   await check('PUT',`/api/accounts/${work}`,headers,workBox,400);
+   await check('POST',`/api/accounts/${work}/test`,headers,{},400);
+   await check('DELETE',`/api/accounts/${work}`,headers,undefined,400);
+   await check('GET',draftUrl,headers,undefined,400);
+   assert.deepEqual(await check('GET','/api/drafts',headers),[]);
+   assert.equal((await check('PUT',draftUrl,headers,draft,409)).error,'DRAFT_CONFLICT');
+   await check('POST',`${draftUrl}/send`,headers,{revision:1},400);
+  }
+  assert.deepEqual(mail.metrics(),before,'foreign requests must not reach the mail peer');
+  await check('PUT',draftUrl,bob,{...draft,accountId:other,to:'work@example.test',subject:'Bob copy'});
+  assert.equal((await check('GET',draftUrl,bob)).operation,null);
+  assert.equal((await check('POST',`${draftUrl}/send`,bob,{revision:1})).state,'accepted');
+  assert.equal(mail.metrics().deliveries,2);
+  assert.equal((await check('GET',draftUrl,alice)).body.subject,draft.subject);
+  await check('DELETE',`/api/accounts/${privateId}`,alice);
+  await check('POST','/api/logout',bob,{});
+  await check('GET','/api/accounts',bob,undefined,401);
+  assert.equal((await check('GET','/api/accounts',alice)).length,1);
+ }finally{await app.close();await mail.close();rmSync(dir,{recursive:true,force:true});}
+});

@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { Store } from '../src/server/store.ts';
 import { resolve, join } from 'node:path';
 
+const password = randomBytes(24).toString('base64url');
 const root = resolve('.test-data');
 mkdirSync(root, { recursive: true, mode: 0o700 });
 
@@ -18,19 +19,19 @@ test('account credentials persist encrypted and remain bound to account', async 
   const a = randomUUID(); const b = randomUUID();
   let store;
   try {
-    store = new Store(join(dir, 'mail.sqlite'), key);
-    store.putAccount(a, { label: 'Werk', address: 'work@example.test' }, { imap: secretA, smtp: secretB });
-    store.putAccount(b, { label: 'Privé', address: 'private@example.test' }, { imap: secretB, smtp: secretA });
-    assert.equal(JSON.stringify(store.listAccounts()).includes(secretA), false);
-    assert.equal(store.credentials(a).imap === secretA, true);
-    assert.equal(store.credentials(b).imap === secretB, true);
+    store = new Store(join(dir, 'mail.sqlite'), key,password);
+    store.putAccount(1,a, { label: 'Werk', address: 'work@example.test' }, { imap: secretA, smtp: secretB });
+    store.putAccount(1,b, { label: 'Privé', address: 'private@example.test' }, { imap: secretB, smtp: secretA });
+    assert.equal(JSON.stringify(store.listAccounts(1)).includes(secretA), false);
+    assert.equal(store.credentials(1,a).imap === secretA, true);
+    assert.equal(store.credentials(1,b).imap === secretB, true);
     store.close(); store = undefined;
     assert.equal(readFileSync(join(dir, 'mail.sqlite')).includes(Buffer.from(secretA)), false);
-    store = new Store(join(dir, 'mail.sqlite'), key);
-    assert.equal(store.listAccounts().length, 2);
-    assert.equal(store.credentials(a).smtp === secretB, true);
+    store = new Store(join(dir, 'mail.sqlite'), key,password);
+    assert.equal(store.listAccounts(1).length, 2);
+    assert.equal(store.credentials(1,a).smtp === secretB, true);
     store.close(); store = undefined;
-    assert.throws(() => new Store(join(dir, 'mail.sqlite'), randomBytes(32)), /KEY_MISMATCH/);
+    assert.throws(() => new Store(join(dir, 'mail.sqlite'), randomBytes(32),password), /KEY_MISMATCH/);
   } finally { store?.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -41,17 +42,17 @@ test('new database is owner-only; missing account and swapped ciphertext fail cl
   const a = randomUUID(); const b = randomUUID();
   let store: Store | undefined;
   try {
-    assert.throws(() => new Store(file, randomBytes(16)), /KEY_LENGTH/);
-    store = new Store(file, key);
+    assert.throws(() => new Store(file, randomBytes(16),password), /KEY_LENGTH/);
+    store = new Store(file, key,password);
     assert.equal(statSync(file).mode & 0o777, 0o600);
-    store.putAccount(a, {label:'Werk',address:'a@example.test'}, {imap:randomBytes(32).toString('hex'),smtp:randomBytes(32).toString('hex')});
-    store.putAccount(b, {label:'Privé',address:'b@example.test'}, {imap:randomBytes(32).toString('hex'),smtp:randomBytes(32).toString('hex')});
-    assert.throws(() => store!.credentials(randomUUID()), /ACCOUNT_NOT_FOUND/);
+    store.putAccount(1,a, {label:'Werk',address:'a@example.test'}, {imap:randomBytes(32).toString('hex'),smtp:randomBytes(32).toString('hex')});
+    store.putAccount(1,b, {label:'Privé',address:'b@example.test'}, {imap:randomBytes(32).toString('hex'),smtp:randomBytes(32).toString('hex')});
+    assert.throws(() => store!.credentials(1,randomUUID()), /ACCOUNT_NOT_FOUND/);
     const db = new DatabaseSync(file);
     try {
-      db.prepare('UPDATE accounts SET credentials=(SELECT credentials FROM accounts WHERE id=?) WHERE id=?').run(a,b);
+      db.prepare('UPDATE mailboxes SET credentials=(SELECT credentials FROM mailboxes WHERE id=?) WHERE id=?').run(a,b);
     } finally { db.close(); }
-    assert.throws(() => store!.credentials(b));
-    assert.equal(typeof store.credentials(a).imap, 'string');
+    assert.throws(() => store!.credentials(1,b));
+    assert.equal(typeof store.credentials(1,a).imap, 'string');
   } finally { store?.close(); rmSync(dir, {recursive:true,force:true}); }
 });

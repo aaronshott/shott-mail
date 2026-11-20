@@ -9,15 +9,17 @@ export async function parseMessage(source:Buffer){
  return {subject:mail.subject??'(Geen onderwerp)',from:mail.from?.text??'',replyTo:mail.replyTo?.value[0]?.address??mail.from?.value[0]?.address??'',text:mail.text??'',html:safeHtml(mail.html||''),attachments:mail.attachments.map(a=>({name:a.filename??'bijlage',size:a.size}))};
 }
 export function inboxRoutes(app:FastifyInstance,store:Store,c:MailPolicy){
- const accounts=()=>store.listAccounts() as MailAccount[];
  app.get<{Querystring:{account?:string;page?:string}}>('/api/inbox',async req=>{
+  const owner=req.principal!.userId;
   const account=req.query.account;const page=z.coerce.number().int().min(0).max(100000).parse(req.query.page??0);
-  if(account&&account!=='all'&&!accounts().some(a=>a.id===account))throw new Error('ACCOUNT_NOT_FOUND');
+  const accounts=account&&account!=='all'
+   ? [store.account(owner,z.string().uuid().parse(account)) as MailAccount]
+   : store.listAccounts(owner) as MailAccount[];
   const result:{messages:any[];errors:{accountId:string;error:string}[];hasMore:boolean}={messages:[],errors:[],hasMore:false};
-  for(const a of accounts().filter(a=>!account||account==='all'||a.id===account)){
+  for(const a of accounts){
    let client;
    try{
-    client=await imap({...a.imap,password:store.credentials(a.id).imap},c);await client.connect();
+    client=await imap({...a.imap,password:store.credentials(owner,a.id).imap},c);await client.connect();
     const box=await client.mailboxOpen('INBOX',{readOnly:true});
     const count=c.pageSize??50;const end=box.exists-page*count,start=Math.max(1,end-count+1);result.hasMore ||= start>1;
     if(end>0)for await(const item of client.fetch(`${start}:${end}`,{uid:true,envelope:true,size:true,flags:true})){
@@ -29,11 +31,12 @@ export function inboxRoutes(app:FastifyInstance,store:Store,c:MailPolicy){
   result.messages.sort((a,b)=>b.date.localeCompare(a.date)||b.uid-a.uid);return result;
  });
  app.get<{Params:{account:string;validity:string;uid:string}}>('/api/messages/:account/:validity/:uid',async(req,reply)=>{
+  const owner=req.principal!.userId;
   const account=z.string().uuid().parse(req.params.account),uid=z.coerce.number().int().positive().parse(req.params.uid);
-  const validity=z.string().regex(/^\d+$/).parse(req.params.validity);const a=accounts().find(a=>a.id===account);if(!a)throw new Error('ACCOUNT_NOT_FOUND');
+  const validity=z.string().regex(/^\d+$/).parse(req.params.validity);const a=store.account(owner,account) as MailAccount;
   let client;
   try{
-   client=await imap({...a.imap,password:store.credentials(account).imap},c);await client.connect();
+   client=await imap({...a.imap,password:store.credentials(owner,account).imap},c);await client.connect();
    const box=await client.mailboxOpen('INBOX',{readOnly:true});
    if(String(box.uidValidity)!==validity)return reply.code(409).send({error:'MESSAGE_IDENTITY_CHANGED'});
    const limit=c.maxMessageBytes??2097152;

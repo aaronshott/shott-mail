@@ -15,13 +15,13 @@ test('own login rejects spoofing, rotates sessions, enforces CSRF and logout',as
  const c=config(); const app=await mod!.buildApp(c);
  try {
   assert.equal((await app.inject({url:'/api/accounts',headers:{'x-forwarded-user':'admin'}})).statusCode,401);
-  assert.equal((await app.inject({method:'POST',url:'/api/login',headers:{origin:c.origin},payload:{password:randomBytes(12).toString('hex')}})).statusCode,401);
-  const login=await app.inject({method:'POST',url:'/api/login',headers:{origin:c.origin},payload:{password:c.password}});
+  assert.equal((await app.inject({method:'POST',url:'/api/login',headers:{origin:c.origin},payload:{login:'admin',password:randomBytes(12).toString('hex')}})).statusCode,401);
+  const login=await app.inject({method:'POST',url:'/api/login',headers:{origin:c.origin},payload:{login:'admin',password:c.password}});
   assert.equal(login.statusCode,200); const cookie=login.headers['set-cookie'];
   assert.ok(String(cookie).includes('HttpOnly'));assert.ok(String(cookie).includes('SameSite=Strict'));
   const headers={cookie:String(cookie).split(';')[0],origin:c.origin,'x-csrf-token':login.json().csrf};
   assert.equal((await app.inject({url:'/api/accounts',headers})).statusCode,200);
-  const renewed=await app.inject({method:'POST',url:'/api/login',headers,payload:{password:c.password}});
+  const renewed=await app.inject({method:'POST',url:'/api/login',headers,payload:{login:'admin',password:c.password}});
   assert.equal(renewed.statusCode,200);
   assert.equal((await app.inject({url:'/api/accounts',headers})).statusCode,401,'old session revoked on re-login');
   headers.cookie=String(renewed.headers['set-cookie']).split(';')[0];headers['x-csrf-token']=renewed.json().csrf;
@@ -36,7 +36,7 @@ test('own login rejects spoofing, rotates sessions, enforces CSRF and logout',as
 test('account settings and drafts persist, send failure retains input and cannot be silently retried',async()=>{
  const {buildApp}=await import('../src/server/app.ts');const c=config();const app=await buildApp(c);
  try{
-  const login=await app.inject({method:'POST',url:'/api/login',headers:{origin:c.origin},payload:{password:c.password}});
+  const login=await app.inject({method:'POST',url:'/api/login',headers:{origin:c.origin},payload:{login:'admin',password:c.password}});
   const headers={cookie:String(login.headers['set-cookie']).split(';')[0],origin:c.origin,'x-csrf-token':login.json().csrf};
   const ep={host:'mail.invalid',port:993,tls:'implicit',user:'synthetic',password:randomBytes(24).toString('hex')};
   const account=await app.inject({method:'POST',url:'/api/accounts',headers,payload:{label:'Werk',address:'work@example.test',imap:ep,smtp:{...ep,port:465}}});

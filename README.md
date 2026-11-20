@@ -1,4 +1,4 @@
-# Shott Mail — B1 testimplementatie
+# Shott Mail — multi-user testimplementatie (MAILCLIENT-10)
 
 Echte TypeScript/Fastify/SQLite-backend en Svelte-interface; geen RAM-demo.
 Dit is nog GEEN geaccepteerde B1 of productieversie. Lokale build, tests en
@@ -9,13 +9,14 @@ Gebruik alleen synthetische accounts. Geen persoonlijke mailboxen/publieke mail.
 
 ## Wat werkt en wat nog niet bewezen is
 
-Eigen single-user login (Argon2id), server-side sessies, CSRF/origincontrole,
+Individuele logins (Argon2id), server-side sessies, CSRF/origincontrole,
 versleutelde accountcredentials, IMAP/SMTP-configuratie, gecombineerde en losse
 inboxroutes, veilige MIME/HTML-verwerking, composer, lokale concepten en een
 persistente SMTP-verzendjournal zijn geïmplementeerd. Desktop en mobiel hebben
 een echte interface. In de browser zijn opslaan, expliciete afzenderkeuze en
 invoerbehoud bij een backend-verzendfout gemeten. Positieve inboxweergave en
-mailaflevering wachten op protocolacceptatie. Ontbrekende serververbinding wordt
+mailaflevering zijn ook getest met de beperkte loopback-TLS-fixture in `npm test`;
+acceptatie tegen Dovecot/Postfix blijft een aparte stap. Ontbrekende serververbinding wordt
 zichtbaar als onvolledige inbox gemeld, niet als een geslaagde lege mailbox.
 
 B1-grenzen: INBOX, tekstmail naar één ontvanger, handmatig vernieuwen en bewaren.
@@ -36,10 +37,27 @@ geautoriseerde Node-installatie; verander geen hostdiensten/securityguards.
     npm run setup
     npm start
 
-Open http://127.0.0.1:3000. Lees het gegenereerde wachtwoord rechtstreeks uit
-`secrets/login` in je eigen lokale omgeving; stuur het niet naar chat/logs.
-`setup` maakt bestaande secrets nooit opnieuw aan. Een wijziging in login-file
-wijzigt een bestaande databasehash NIET. De login-file is bootstrap-only.
+Open http://127.0.0.1:3000. Gebruik login `admin` met het wachtwoord uit
+`secrets/login`; lees het rechtstreeks in de lokale omgeving, niet via chat/logs.
+Maak gebruikers aan via **Gebruikers** en kies per gebruiker een eigen sterk
+wachtwoord (minimaal 16 tekens). Loginnamen zijn hoofdletterongevoelig en uniek.
+Gebruikers koppelen hun eigen mailboxen via **Accounts**; **Alle accounts** toont
+alleen hun eigen ingestelde mailboxen. De beheerrol geeft geen toegang tot de
+mailboxen, concepten of verzendstatus van anderen. Er is geen publieke registratie.
+
+### Upgrade van B1
+
+Stop eerst de B1-app en maak een herstelbare, consistente backup van data,
+secrets en fixturemail. Behoud de bestaande volumes en bestanden `secrets/key`
+en `secrets/login`. Bij eerste start controleert de server de oorspronkelijke
+sleutel en verifieert hij het loginbestand tegen de opgeslagen B1-hash.
+Een mismatch blokkeert de upgrade; maak geen sleutels aan om een fout te wissen.
+De migratie wijst in één transactie alle B1-mailboxen, concepten en verzendstatus
+toe aan `admin`, behoudt versleutelde credentials en maakt alle B1-sessies ongeldig.
+Log opnieuw in als `admin` met het bestaande B1-wachtwoord. Nieuwe gebruikers
+beginnen leeg. Na migratie verandert een gewijzigd loginbestand het opgeslagen
+wachtwoord niet. Terugval vereist de backup van vóór de migratie; start B1 nooit
+op de gemigreerde database.
 
 `npm ci --ignore-scripts` schakelt dependency-installatiescripts UIT, niet
 securitychecks. Omzeil geen installatieblokkades. Het ongeautoriseerde
@@ -53,10 +71,12 @@ Installatie van Node-24-types/testpackages is nog geblokkeerd; afstemmen blijft 
 Tests genereren eigen secrets en data onder `.test-data`; geen vaste wachtwoorden.
 `npm test` omvat echte SQLite/Fastify/crypto, procesherstart en een bewust beperkte
 SMTP/TLS-foutsimulator. Die simulator is GEEN volwaardige mailserverfixture en
-GEEN interoperabiliteitsbewijs. `tests/browser-harness.ts` is alleen voor lokale
-browsertests: verse synthetische data, uitsluitend loopback. De test-loginroute
-komt niet in productie of het runtime-image. De echte login is afzonderlijk via
-HTTP getest; succesvolle wachtwoordinvoer is niet via browserautomation bewezen.
+GEEN interoperabiliteitsbewijs. De multi-user-tests omvatten ook een echte
+TLS/IMAP/SMTP-rondgang over loopback en migratie van een synthetische B1-database.
+Voor de browserworkflow: bouw de client, start `node tests/browser-harness.ts`,
+open de gemelde loopback-URL met `/__test_login?workflow=1` en lees
+`window.multiuserBrowserResult` in de browserconsole. De test gebruikt verse
+synthetische data; de test-loginroute zit niet in productie of het runtime-image.
 
 ## Docker-teststack op Aärons eigen host — nog niet uitgevoerd
 
@@ -69,7 +89,7 @@ container- of licentie/advisoryvrijgave geclaimd.
 
     git clone https://github.com/aaronshott/shott-mail.git
     cd shott-mail
-    git fetch origin feat/b1-mail-flow
+    git fetch origin feat/mailclient-10-multiuser
     git checkout --detach <EXACTE_COMMIT_UIT_DEVELOPMENT_RAPPORT>
     cp .env.example .env
     export LOCAL_UID=$(id -u)
@@ -179,7 +199,7 @@ rechten en bijbehorende sleutel. Herstel fixturevolume met dezelfde image:
 
 Update alleen naar expliciet gekozen SHA:
 
-    git fetch origin feat/b1-mail-flow
+    git fetch origin feat/mailclient-10-multiuser
     git checkout --detach <NIEUWE_GOEDGEKEURDE_COMMIT>
     docker compose build
     docker compose up -d app
