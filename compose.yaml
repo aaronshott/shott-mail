@@ -1,0 +1,68 @@
+name: shott-mail-b1
+services:
+  app:
+    build: .
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    init: true
+    restart: "no"
+    ports:
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
+    environment:
+      APP_ORIGIN: "${APP_ORIGIN:-http://127.0.0.1:3000}"
+      BIND_HOST: 0.0.0.0
+      PORT: "3000"
+      DB_PATH: /app/data/app.sqlite
+      KEY_FILE: /app/secrets/key
+      PASSWORD_FILE: /app/secrets/login
+      MAIL_CA_FILE: /app/secrets/mail.crt
+      MAIL_ALLOWLIST: mail:1993,mail:1587
+      SESSION_MS: "${SESSION_MS:-28800000}"
+      MAX_MESSAGE_BYTES: "${MAX_MESSAGE_BYTES:-2097152}"
+      INBOX_PAGE_SIZE: "${INBOX_PAGE_SIZE:-50}"
+      MAIL_TIMEOUT_MS: "${MAIL_TIMEOUT_MS:-10000}"
+      LOGIN_ATTEMPTS_PER_MINUTE: "${LOGIN_ATTEMPTS_PER_MINUTE:-10}"
+      BODY_LIMIT_BYTES: "${BODY_LIMIT_BYTES:-262144}"
+      MAX_DRAFT_CHARS: "${MAX_DRAFT_CHARS:-200000}"
+      SQLITE_BUSY_MS: "${SQLITE_BUSY_MS:-5000}"
+    volumes:
+      - ./data:/app/data
+      - ./secrets:/app/secrets:ro
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [isolated]
+    depends_on:
+      mail:
+        condition: service_healthy
+  setup:
+    profiles: [tools]
+    build: .
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    entrypoint: [node, scripts/setup.mjs]
+    volumes:
+      - ./secrets:/app/secrets
+      - ./data:/app/data
+    network_mode: none
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  mail:
+    build: ./fixtures/mail
+    restart: "no"
+    volumes:
+      - ./secrets:/run/test-secrets:ro
+      - fixture-mail:/mail
+    networks: [isolated]
+    healthcheck:
+      test: [CMD, python3, /fixture/health.py]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 6
+    # No published protocol ports and no external network: synthetic mail only.
+    security_opt: [no-new-privileges:true]
+networks:
+  isolated:
+    internal: true
+volumes:
+  fixture-mail:
