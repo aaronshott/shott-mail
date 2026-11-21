@@ -31,11 +31,15 @@ export async function runSettings(){
  await until(()=>pick('INBOX'),'tree did not load');
  const expand=aside.querySelector('[aria-label="Submappen van INBOX"]');
  assert(expand&&expand.getBoundingClientRect().height>=44&&summary.getBoundingClientRect().height>=44,'folder controls too small');
+ assert(getComputedStyle(summary).borderInlineStartWidth==='0px','decorative folder frame remains');
  expand.focus();expand.click();await wait(0);
  assert(document.activeElement===expand&&expand.getAttribute('aria-expanded')==='true'&&pick('INBOX'),'selectable parent lacks independent disclosure');
+ const nested=aside.querySelector('.folder-list.indent');
+ assert(nested&&getComputedStyle(nested).borderInlineStartWidth==='0px'&&parseFloat(getComputedStyle(nested).paddingInlineStart)>0,'folder hierarchy lost or decorative line remains');
  pick('INBOX').click();await idle();
  assert(h1().textContent==='INBOX'&&document.activeElement===h1(),'folder navigation failed to focus heading');
  assert(!mobile||!aside.getClientRects().length,'mobile navigation stayed open');
+ assert(pick('INBOX').getAttribute('aria-current')==='page','active folder selection lost');
  await openNav();press('+ Nieuw bericht');await wait(0);
  const sender=()=>document.querySelector('main select');
  assert(sender().value===work.value,'folder account not suggested for new draft');

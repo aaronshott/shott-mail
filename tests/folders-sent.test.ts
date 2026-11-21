@@ -44,7 +44,7 @@ test('LIST, owned absolute mailbox identity, UIDVALIDITY paging and sanitized UI
  const first=(await f.admin(path(nested.id))).json();assert.equal(first.validity,'44');assert.equal(first.hasMore,true);assert.equal(first.messages[0].uid,2);
  assert.equal((await f.admin(`${path(nested.id)}?page=1`)).statusCode,400);
  const second=(await f.admin(`${path(nested.id)}?page=1&validity=44`)).json();assert.equal(second.hasMore,false);assert.equal(second.messages[0].uid,1);
- const read=(await f.admin(`${path(nested.id)}/44/1`)).json();assert.equal(read.subject,'Nested 1 for work@example.test');assert.equal(read.html.trim(),'<p>Nested body 1</p>');
+ const read=(await f.admin(`${path(nested.id)}/44/1`)).json();assert.equal(read.subject,'Nested 1 for work@example.test');assert.match(read.formatted.markup,/^<p>Nested body 1<\/p>/);assert.doesNotMatch(read.formatted.markup,/<script|<img|https:/);
  const inbox=(await f.admin('/api/inbox')).json();assert.equal(inbox.messages.length,1);assert.match(inbox.messages[0].subject,/^Seed for work/);
  assert.match((await f.admin(`/api/messages/${f.account}/33/1`)).json().text,/Private body/);
  f.mail.behavior.validity=55;

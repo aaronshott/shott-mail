@@ -35,6 +35,9 @@ export class Store {
         user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
         language TEXT NOT NULL CHECK(language IN ('nl','en')),
         theme TEXT NOT NULL CHECK(theme IN ('system','light','dark')))`);
+      if (!this.db.prepare("SELECT 1 FROM pragma_table_info('user_preferences') WHERE name='reader_format'").get()) {
+        this.db.exec("ALTER TABLE user_preferences ADD COLUMN reader_format TEXT NOT NULL DEFAULT 'plain' CHECK(reader_format IN ('plain','html'))");
+      }
       if (!hasMeta) {
         this.db.exec('CREATE TABLE meta (id INTEGER PRIMARY KEY CHECK(id=1), check_value TEXT NOT NULL)');
         this.db.prepare('INSERT INTO meta VALUES (1,?)').run(this.seal('shott-mail-key-check-v1', 'installation'));

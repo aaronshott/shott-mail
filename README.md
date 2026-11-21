@@ -247,8 +247,18 @@ als bewijs; een scriptbestand of `compose config` is geen PASS.
   en SQLITE_BUSY_MS. Geen door Aäron vastgestelde normen. Configureer bodylimiet
   ruim genoeg voor JSON/UTF-8 boven de maximale conceptlengte; server weigert te
   grote aanvragen zonder het opgeslagen concept te overschrijven.
-- Safe HTML laat alleen eenvoudige opmaak zonder attributen door; sandbox-iframe,
-  CSP, geen scripts/afbeeldingen/links/remote CSS. Geen willekeurige URL/filefetch.
+- Binnenkomende mail staat per gebruiker standaard op platte tekst. Onder
+  Instellingen kan de gebruiker Veilige HTML kiezen (NL/EN); zonder bruikbare
+  HTML blijft de platte tekst zichtbaar. De lezer bouwt alleen eenvoudige opmaak
+  op uit een gesaneerde, inerte tussenrepresentatie; geen interactieve links,
+  formulieren, scripts of meegestuurde opmaakregels/attributen.
+- Externe afbeeldingen staan uit tot een expliciete klik in de geopende lezer.
+  Toestemming vervalt bij sluiten, wisselen of heropenen en geldt nooit voor de
+  afzender. De browser haalt alleen HTTPS-afbeeldingen op, zonder cookies,
+  authenticatiegegevens of referrer en zonder redirects of serverproxy. De
+  beeldhost kan de aanvraag koppelen aan het openen van het bericht en ziet
+  onder meer het IP-adres. CORS, ondersteunde rastertypen en groottelimieten
+  kunnen verhinderen dat een afbeelding verschijnt; de alternatieve tekst blijft.
 - Versturen: concept eerst persistent opslaan, operation-id vergrendelen, daarna
   netwerk. Een herhaalde POST voert niet opnieuw SMTP uit. Na DATA-fout/herstart
   wordt resultaat conservatief `outcome_unknown`. Nooit automatisch hersturen.

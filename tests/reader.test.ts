@@ -1,0 +1,27 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {parseMessage} from '../src/server/inbox.ts';
+
+const mime=(body:string)=>Buffer.from(`From: sender@example.test\r\nSubject: Reader fixture\r\nMIME-Version: 1.0\r\n${body}`);
+const html=(body:string)=>mime(`Content-Type: text/html; charset=utf-8\r\n\r\n${body}`);
+
+test('only real HTML body becomes inert structured content; preserve the plain alternative',async()=>{
+ const source=mime('Content-Type: multipart/alternative; boundary=alt\r\n\r\n--alt\r\nContent-Type: text/plain\r\n\r\nPlain & literal <b>\r\n--alt\r\nContent-Type: text/html\r\n\r\n<p class="newsletter">Hello &amp; <strong>team</strong></p>\r\n--alt--\r\n');
+ const original=Buffer.from(source);
+ const parsed=await parseMessage(source);
+ assert.equal(parsed.text.trim(),'Plain & literal <b>');
+ assert.deepEqual(parsed.formatted,{markup:'<p>Hello &amp; <strong>team</strong></p>',images:[]});
+ assert.equal('html' in parsed,false);
+ assert.deepEqual(source,original);
+ assert.equal((await parseMessage(mime('Content-Type: text/plain\r\n\r\n<b>literal</b>'))).formatted,null);
+ const attached=await parseMessage(mime('Content-Type: multipart/mixed; boundary=parts\r\n\r\n--parts\r\nContent-Type: text/plain\r\n\r\nBody\r\n--parts\r\nContent-Type: text/html\r\nContent-Disposition: attachment; filename=letter.html\r\n\r\n<p>Attachment only</p>\r\n--parts--\r\n'));
+ assert.equal(attached.formatted,null);assert.equal(attached.attachments.length,1);
+});
+
+test('allowlisted formatting and explicit HTTPS image candidates only',async()=>{
+ const parsed=await parseMessage(html('<p><a href="https://example.test/news">News</a> <img src="https://images.example.test/p.png?a=1&amp;b=2" srcset="https://example.test/large.png 2x" alt="Photo"> <img src="/logo.png" alt="Logo"></p><form><label>Search <input name="q"></label></form>'));
+ assert.deepEqual(parsed.formatted,{markup:'<p>News <mail-image data-index="0">Photo</mail-image> <span>Logo</span></p>',images:['https://images.example.test/p.png?a=1&b=2']});
+ assert.ok(parsed.text.includes('News'));
+ assert.equal((await parseMessage(html('<div> </div>'))).formatted,null);
+ assert.equal((await parseMessage(html('<blockquote>'.repeat(70)+'deep'+'</blockquote>'.repeat(70)))).formatted,null);
+});

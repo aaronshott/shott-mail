@@ -2,10 +2,21 @@
 // /__test_login exchanges a generated server-side secret for a session, avoiding secrets in browser tooling/logs.
 import {mkdtempSync,mkdirSync,readFileSync,rmSync} from 'node:fs';import {resolve,join} from 'node:path';import {randomBytes,randomUUID} from 'node:crypto';import {buildApp} from '../src/server/app.ts';import {Store} from '../src/server/store.ts';
 import {startMailFixture} from './mail-fixture.ts';
+import {createServer as createHttps} from 'node:https';
+import {once} from 'node:events';
 mkdirSync('.test-data',{recursive:true,mode:0o700});const dir=mkdtempSync(resolve('.test-data/browser-'));
 const folders=process.argv.includes('--folders');
 const replySubjects=process.argv.includes('--reply-subjects');
-const mail=folders||replySubjects||process.argv.includes('--composer')?await startMailFixture(dir,folders):null;
+const reader=process.argv.includes('--reader');
+const mail=folders||replySubjects||reader||process.argv.includes('--composer')?await startMailFixture(dir,folders):null;
+const imageRequests:{path?:string;cookie:boolean;referer:boolean;authorization:boolean}[]=[];
+const imageHost=reader?createHttps({key:readFileSync(join(dir,'mail.key')),cert:mail!.ca},(req,res)=>{
+ imageRequests.push({path:req.url,cookie:!!req.headers.cookie,referer:!!req.headers.referer,authorization:!!req.headers.authorization});
+ res.writeHead(200,{'Access-Control-Allow-Origin':'*','Content-Type':'image/png'});
+ res.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9WQAAAAASUVORK5CYII=','base64'));
+}):null;
+let imageOrigin='';
+if(imageHost){const listening=once(imageHost,'listening');imageHost.listen(0,'127.0.0.1');await listening;imageOrigin=`https://127.0.0.1:${(imageHost.address() as {port:number}).port}`;mail!.seedReader(imageOrigin);}
 if(replySubjects)mail?.seedReplySubjects();
 if(process.argv.includes('--context'))mail?.seedSent();
 const c={dbPath:join(dir,'app.sqlite'),key:randomBytes(32),password:randomBytes(24).toString('base64url'),origin:'http://127.0.0.1',secureCookie:false,allowedMail:mail?.allowedMail??[],sessionMs:3600000,staticRoot:resolve('dist/client'),...(mail?{mailMode:'fixture' as const,ca:mail.ca,timeoutMs:3000}:{}),...(folders?{pageSize:1}:{})};
@@ -27,6 +38,10 @@ app.get('/__test_users',async(_req,reply)=>reply.type('text/html').send(readFile
 app.get('/__test_users.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-users.js','utf8')));
 app.get('/__test_composer.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-composer.js','utf8')));
 app.get('/__test_settings.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-settings.js','utf8')));
+if(reader){
+ app.get('/__test_reader.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-reader.js','utf8')));
+ app.get('/__test_image_requests',async()=>imageRequests);
+}
 if(replySubjects)app.get('/__test_reply_subjects.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-reply-subjects.js','utf8')));
 if(folders&&mail){
  app.get('/__test_folders.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-folders.js','utf8')));
@@ -40,5 +55,5 @@ async function run(){
  try {const a=await window.b1Regression.dirtyDrafts();window.b1Results=[a,await window.b1Regression.sendResponseLoss()];}
  catch(error){window.b1Results={error:error.message};}
 } await run();`));
-const address=await app.listen({host:'127.0.0.1',port:0});c.origin=address;console.info('BROWSER_HARNESS '+address);
-for(const signal of ['SIGTERM','SIGINT'])process.on(signal,async()=>{await app.close();await mail?.close();rmSync(dir,{recursive:true,force:true});process.exit(0);});
+const address=await app.listen({host:'127.0.0.1',port:0});c.origin=address;console.info('BROWSER_HARNESS '+address+(imageOrigin?' '+imageOrigin:''));
+for(const signal of ['SIGTERM','SIGINT'])process.on(signal,async()=>{imageHost?.close();await app.close();await mail?.close();rmSync(dir,{recursive:true,force:true});process.exit(0);});

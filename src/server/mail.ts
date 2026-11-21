@@ -1,6 +1,6 @@
 import {ImapFlow} from 'imapflow';
 import nodemailer from 'nodemailer';
-import sanitize from 'sanitize-html';
+
 import {endpointOptions,type Endpoint,type MailPolicy,type Protocol} from './mail-policy.ts';
 export type {Endpoint,MailPolicy} from './mail-policy.ts';
 export async function composeRaw(message:{from:string;to:string;subject:string;text:string;messageId:string}):Promise<Buffer>{
@@ -11,7 +11,7 @@ export async function composeRaw(message:{from:string;to:string;subject:string;t
   return raw;
  }finally{transport.close();}
 }
-export function safeHtml(html:string):string{return sanitize(html,{allowedTags:['p','br','b','strong','em','i','u','ul','ol','li','blockquote','pre','code','h1','h2','h3','table','tr','td','th','tbody','div','span'],allowedAttributes:{},allowedSchemes:[],allowProtocolRelative:false});}
+
 export async function imap(e:Endpoint,c:MailPolicy){
  const opts=await endpointOptions('imap',e,c);
  const client=new ImapFlow({...opts,servername:opts.tls.servername,doSTARTTLS:e.tls==='starttls',logger:false,logRaw:false,disableAutoIdle:true});
