@@ -93,7 +93,8 @@ export async function buildApp(c:Config){
  app.get('/api/config',async()=>({maxDraftChars:c.maxDraftChars??200000,mailMode:c.mailMode??'disabled'}));
  app.get('/api/accounts',async req=>store.listAccounts(req.principal!.userId));
  if(c.mailMode==='public'){
-  const networkRoutes=new Set(['/api/accounts/:id/test','/api/drafts/:id/send','/api/inbox','/api/messages/:account/:validity/:uid']);
+  const networkRoutes=new Set(['/api/accounts/:id/test','/api/drafts/:id/send','/api/inbox','/api/messages/:account/:validity/:uid',
+   '/api/accounts/:account/folders','/api/accounts/:account/folders/:folder/messages','/api/accounts/:account/folders/:folder/messages/:validity/:uid','/api/accounts/:id/sent','/api/drafts/:id/check-sent']);
   const requests=new Map<number,number>();let windowEnd=0,active=0;
   app.addHook('onRoute',route=>{
    if(!networkRoutes.has(route.url))return;

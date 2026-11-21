@@ -19,7 +19,8 @@ async function createUser(name,password){
 async function login(name,password){
  await until('login form',()=>document.querySelector('.login form'));
  const fields=form().querySelectorAll('input');fill(fields[0],name);fill(fields[1],password);await click('Aanmelden');
- await until('authenticated '+name,()=>document.querySelector('header')?.innerText.includes(name)&&button('Vernieuwen')&&!button('Vernieuwen').disabled);
+ // The identity tag is intentionally hidden at mobile widths.
+ await until('authenticated '+name,()=>document.querySelector('header')?.textContent.includes(name)&&button('Vernieuwen')&&!button('Vernieuwen').disabled);
  check('no administration controls for '+name,!button('Gebruikers'));
 }
 async function addMailbox(name){
@@ -30,6 +31,7 @@ async function addMailbox(name){
 }
 const options=()=>[...document.querySelectorAll('aside select option')].map(e=>e.textContent);
 try{
+ await until('mounted admin workspace',()=>button('Uitloggen')&&!button('Uitloggen').disabled);
  await click('Gebruikers');await until('admin panel',()=>exact('Gebruikers beheren'));
  await createUser(alice,alicePass);await createUser(bob,bobPass);
  check('both new logins in admin UI',document.querySelector('main ul').innerText.includes(alice)&&document.querySelector('main ul').innerText.includes(bob));
