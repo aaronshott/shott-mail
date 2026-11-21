@@ -8,10 +8,10 @@ import {discover,folderId,useMailbox} from './folders.ts';
 import type {ImapFlow,FetchMessageObject,MailboxObject} from 'imapflow';
 const validitySchema=z.string().regex(/^\d{1,20}$/);
 const pageSchema=z.coerce.number().int().min(0).max(100000);
-const summary=(item:FetchMessageObject,a:MailAccount,box:MailboxObject)=>({accountId:a.id,accountLabel:a.label,address:a.address,uid:item.uid,validity:String(box.uidValidity),subject:item.envelope?.subject??'(Geen onderwerp)',subjectMissing:item.envelope?.subject==null,from:item.envelope?.from?.map(v=>v.name||v.address).join(', ')??'',date:item.envelope?.date?new Date(item.envelope.date).toISOString():'',unread:!item.flags?.has('\\Seen')});
+const summary=(item:FetchMessageObject,a:MailAccount,box:MailboxObject)=>({accountId:a.id,accountLabel:a.label,address:a.address,uid:item.uid,validity:String(box.uidValidity),subject:item.envelope?.subject??'',subjectMissing:item.envelope?.subject==null,from:item.envelope?.from?.map(v=>v.name||v.address).join(', ')??'',date:item.envelope?.date?new Date(item.envelope.date).toISOString():'',unread:!item.flags?.has('\\Seen')});
 export async function parseMessage(source:Buffer){
  const mail=await simpleParser(source,{skipHtmlToText:false,skipTextToHtml:true,skipImageLinks:true});
- return {subject:mail.subject??'(Geen onderwerp)',subjectMissing:mail.subject==null,from:mail.from?.text??'',replyTo:mail.replyTo?.value[0]?.address??mail.from?.value[0]?.address??'',text:mail.text??'',html:safeHtml(mail.html||''),attachments:mail.attachments.map(a=>({name:a.filename??'bijlage',size:a.size}))};
+ return {subject:mail.subject??'',subjectMissing:mail.subject==null,from:mail.from?.text??'',replyTo:mail.replyTo?.value[0]?.address??mail.from?.value[0]?.address??'',text:mail.text??'',html:safeHtml(mail.html||''),attachments:mail.attachments.map(a=>({name:a.filename??'bijlage',size:a.size}))};
 }
 export function inboxRoutes(app:FastifyInstance,store:Store,c:MailPolicy){
  const accountFor=(owner:number,id:string)=>store.account(owner,z.string().uuid().parse(id)) as MailAccount;

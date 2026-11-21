@@ -5,7 +5,7 @@ import {once} from 'node:events';
 import {mkdir,mkdtemp,readFile,rm} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 const chrome=process.argv[2];if(!chrome)throw Error('Pass an absolute Chrome/Chromium path');
-const workflows=process.argv[3]?[process.argv[3]]:['folders','context','composer','b1','users','settings'];
+const workflows=process.argv.length>3?process.argv.slice(3):['folders','context','composer','b1','users','settings','reply-nl','reply-en'];
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 await mkdir('.test-data',{recursive:true,mode:0o700});
 const profile=await mkdtemp(resolve('.test-data/browser-chrome-'));
@@ -19,7 +19,8 @@ try{
  const {Browser}=await (await fetch(endpoint+'/json/version')).json();
  for(const mobile of [false,true])for(const kind of workflows){
   const record={kind,mobile};results.push(record);
-  const h=start(process.execPath,['tests/browser-harness.ts',...(kind==='context'?['--folders','--context']:kind==='settings'?['--folders']:['folders','composer'].includes(kind)?[`--${kind}`]:[])]);
+  const replyLocale=kind==='reply-nl'?'nl':kind==='reply-en'?'en':null;
+  const h=start(process.execPath,['tests/browser-harness.ts',...(replyLocale?['--reply-subjects']:kind==='context'?['--folders','--context']:kind==='settings'?['--folders']:['folders','composer'].includes(kind)?[`--${kind}`]:[])]);
   let origin,tab,ws;h.stdout.on('data',chunk=>{origin=/BROWSER_HARNESS (http:\/\/127\.0\.0\.1:\d+)/.exec(String(chunk))?.[1]??origin;});
   try{
    await poll(()=>origin);tab=await (await fetch(endpoint+'/json/new?about:blank',{method:'PUT'})).json();
@@ -29,7 +30,7 @@ try{
     const id=++seq,timer=setTimeout(()=>{pending.delete(id);j(Error(method+' timeout'));},45000);
     pending.set(id,(value,error)=>{pending.delete(id);clearTimeout(timer);error?j(Error(error.message)):r(value);});ws.send(JSON.stringify({id,method,params}));
    });
-   await call('Emulation.setDeviceMetricsOverride',{width:mobile?390:1280,height:mobile?844:900,deviceScaleFactor:mobile?3:1,mobile});
+   await call('Emulation.setDeviceMetricsOverride',{width:mobile?(replyLocale?320:390):1280,height:mobile?844:900,deviceScaleFactor:mobile?3:1,mobile});
    await call('Emulation.setTouchEmulationEnabled',{enabled:mobile});
    if(kind==='settings')await call('Emulation.setEmulatedMedia',{features:[{name:'prefers-color-scheme',value:'dark'}]});
    const suffix=kind==='users'?'?workflow=1':kind==='b1'?'?workflow=b1':'';
@@ -43,6 +44,7 @@ try{
    record.viewport=await evaluate('[innerWidth,innerHeight]');
    if(kind==='users'||kind==='b1')record.result=await poll(()=>evaluate(kind==='users'?'window.multiuserBrowserResult':'window.b1Results'));
    else if(kind==='context')record.result=await evaluate("import('/__test_folder_context.js').then(m=>m.runContext())",true);
+   else if(replyLocale)record.result=await evaluate(`import('/__test_reply_subjects.js').then(m=>m.runReplySubjects(${JSON.stringify(replyLocale)}))`,true);
    else if(kind==='settings'){
     record.result=await evaluate("import('/__test_settings.js').then(m=>m.runSettings())",true);
     const beforeReload=await evaluate('performance.timeOrigin');

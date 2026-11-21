@@ -105,7 +105,7 @@
   try{const created=await api('/api/admin/users','POST',{login:newLogin,password:newPassword});newLogin='';users=await api('/api/admin/users');notice=['userCreated',{login:created.login}];}
   finally{newPassword='';}
  });}
- function newDraft(reply){editor={id:crypto.randomUUID(),accountId:reply?.accountId??(view==='folder'?activeFolder.account:filter==='all'?'':filter),revision:0,to:reply?.replyTo||'',subject:reply?'Re: '+reply.subject:'',text:reply?'\n\n'+reply.text:'',operation:null};dirty=true;observation='';notice='draftUnsaved';return goView('compose');}
+ function newDraft(reply){editor={id:crypto.randomUUID(),accountId:reply?.accountId??(view==='folder'?activeFolder.account:filter==='all'?'':filter),revision:0,to:reply?.replyTo||'',subject:reply&&!reply.subjectMissing?'Re: '+reply.subject:'',text:reply?'\n\n'+reply.text:'',operation:null};dirty=true;observation='';notice='draftUnsaved';return goView('compose');}
  async function save(){
   const draft=editor;
   const r=await api(`/api/drafts/${draft.id}`,'PUT',{accountId:draft.accountId,revision:draft.revision,to:draft.to,subject:draft.subject,text:draft.text});

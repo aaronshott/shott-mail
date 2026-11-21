@@ -4,7 +4,9 @@ import {mkdtempSync,mkdirSync,readFileSync,rmSync} from 'node:fs';import {resolv
 import {startMailFixture} from './mail-fixture.ts';
 mkdirSync('.test-data',{recursive:true,mode:0o700});const dir=mkdtempSync(resolve('.test-data/browser-'));
 const folders=process.argv.includes('--folders');
-const mail=folders||process.argv.includes('--composer')?await startMailFixture(dir,folders):null;
+const replySubjects=process.argv.includes('--reply-subjects');
+const mail=folders||replySubjects||process.argv.includes('--composer')?await startMailFixture(dir,folders):null;
+if(replySubjects)mail?.seedReplySubjects();
 if(process.argv.includes('--context'))mail?.seedSent();
 const c={dbPath:join(dir,'app.sqlite'),key:randomBytes(32),password:randomBytes(24).toString('base64url'),origin:'http://127.0.0.1',secureCookie:false,allowedMail:mail?.allowedMail??[],sessionMs:3600000,staticRoot:resolve('dist/client'),...(mail?{mailMode:'fixture' as const,ca:mail.ca,timeoutMs:3000}:{}),...(folders?{pageSize:1}:{})};
 const store=new Store(c.dbPath,c.key,c.password);
@@ -25,6 +27,7 @@ app.get('/__test_users',async(_req,reply)=>reply.type('text/html').send(readFile
 app.get('/__test_users.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-users.js','utf8')));
 app.get('/__test_composer.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-composer.js','utf8')));
 app.get('/__test_settings.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-settings.js','utf8')));
+if(replySubjects)app.get('/__test_reply_subjects.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-reply-subjects.js','utf8')));
 if(folders&&mail){
  app.get('/__test_folders.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-folders.js','utf8')));
  app.get('/__test_folder_context.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-folder-context.js','utf8')));

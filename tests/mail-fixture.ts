@@ -88,10 +88,10 @@ export async function startMailFixture(dir:string,folders=false){
    if(fetch){
     const indices=fetch[0].split(',').flatMap(range=>{const [start,end=start]=range.split(':').map(s=>s==='*'?mail.length:Number(s));return Array.from({length:Math.max(0,Math.min(end,mail.length)-start+1)},(_,i)=>start+i);}),query=fetch.slice(1).join(' ').toUpperCase();
     for(const i of indices){
-     const source=mail[i-1],size=Buffer.byteLength(source),subject=/^Subject: (.*)\r$/m.exec(source)?.[1]??'Fixture';
+     const source=mail[i-1],size=Buffer.byteLength(source),subject=/^Subject: (.*)\r$/m.exec(source)?.[1];
      let result=`* ${i} FETCH (UID ${i} RFC822.SIZE ${size} FLAGS ()`;
      const id=/^Message-ID: (.*)\r$/mi.exec(source)?.[1];
-     if(query.includes('ENVELOPE'))result+=` ENVELOPE ("Fri, 20 Nov 2026 12:00:00 +0000" ${JSON.stringify(subject)} ((NIL NIL "sender" "example.test")) NIL NIL NIL NIL NIL NIL ${id?JSON.stringify(id):'NIL'})`;
+     if(query.includes('ENVELOPE'))result+=` ENVELOPE ("Fri, 20 Nov 2026 12:00:00 +0000" ${subject===undefined?'NIL':JSON.stringify(subject)} ((NIL NIL "sender" "example.test")) NIL NIL NIL NIL NIL NIL ${id?JSON.stringify(id):'NIL'})`;
      if(query.includes('BODY.PEEK[]')||query.includes('BODY[]'))result+=` BODY[]<0> {${size}}\r\n${source}`;
      write(result+')');
     }
@@ -128,6 +128,7 @@ export async function startMailFixture(dir:string,folders=false){
  return {ca,allowedMail:[`127.0.0.1:${imapPort}`,`127.0.0.1:${smtpPort}`],metrics:()=>({deliveries,imapAuth,smtpAuth}),
   behavior,submitted,appended,appendCount:()=>appendAttempts,releaseProvider:()=>{for(const {mail,raw} of delayed.splice(0))mail.push(raw);},
   seedSent:()=>paths.get('work@example.test')!.get(sent)!.push('From: work@example.test\r\nSubject: QA17 Sent row\r\n\r\nSent context only\r\n'),
+  seedReplySubjects:()=>paths.get('work@example.test')!.set('INBOX',[undefined,'(Geen onderwerp)','(No subject)','Quarterly report'].map((subject,i)=>`From: sender@example.test\r\n${subject===undefined?'':`Subject: ${subject}\r\n`}\r\nReply fixture ${i}\r\n`)),
   mailbox:(name:string)=>{const user=`${name}@example.test`,password=passwords.get(user);if(!password)throw new Error('Invalid fixture mailbox');
    const ep={host:'127.0.0.1',tls:'implicit' as const,user,password};return {label:name,address:user,imap:{...ep,port:imapPort},smtp:{...ep,port:smtpPort}};},
   close:async()=>{for(const socket of sockets)socket.destroy();await Promise.all([new Promise<void>(r=>imap.close(()=>r())),new Promise<void>(r=>smtp.close(()=>r()))]);}};
