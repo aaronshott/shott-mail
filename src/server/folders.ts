@@ -7,7 +7,7 @@ import {imap,type MailPolicy} from './mail.ts';
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const folderId=z.string().regex(/^[a-f0-9]{64}$/);
 export const mailboxIdentity=(a:MailAccount)=>hash([a.id,a.imap.host,a.imap.port,a.imap.tls,a.imap.user]);
-export type Folder={id:string;path:string;selectable:boolean;sent:boolean;subscribed:boolean};
+export type Folder={id:string;path:string;delimiter:string|null;selectable:boolean;sent:boolean;subscribed:boolean};
 
 export async function useMailbox<T>(a:MailAccount,password:string,c:MailPolicy,fn:(client:ImapFlow)=>Promise<T>):Promise<T>{
  const client=await imap({...a.imap,password},c);
@@ -35,7 +35,7 @@ export async function discover(client:ImapFlow,a:MailAccount):Promise<Folder[]>{
   const flags=new Set([...entry.flags].map(flag=>flag.toLowerCase()));
   const id=hash([identity,path]);
   const old=folders.get(id);
-  folders.set(id,{id,path,selectable:(!old||old.selectable)&&!flags.has('\\noselect')&&!flags.has('\\nonexistent'),sent:!!old?.sent||flags.has('\\sent'),subscribed:!!old?.subscribed||!!entry.subscribed});
+  folders.set(id,{id,path,delimiter:old?old.delimiter:entry.delimiter||null,selectable:(!old||old.selectable)&&!flags.has('\\noselect')&&!flags.has('\\nonexistent'),sent:!!old?.sent||flags.has('\\sent'),subscribed:!!old?.subscribed||!!entry.subscribed});
  }
  return [...folders.values()].sort((a,b)=>a.path.localeCompare(b.path));
 }

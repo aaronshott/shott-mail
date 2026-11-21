@@ -18,6 +18,7 @@ const digest=(s:string)=>createHash('sha256').update(s).digest('hex');
 const loginName=z.string().trim().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/).transform(s=>s.toLowerCase());
 const loginBody=z.object({login:loginName,password:z.string().max(1024)}).strict();
 const userBody=z.object({login:loginName,password:z.string().min(16).max(1024)}).strict();
+const preferences=z.object({language:z.enum(['nl','en']),theme:z.enum(['system','light','dark'])}).strict();
 const publicPrincipal=({login,role,csrf}:Principal)=>({login,role,csrf});
 
 export async function buildApp(c:Config){
@@ -69,6 +70,18 @@ export async function buildApp(c:Config){
   return {csrf,login:user.login,role:user.role};
  });
  app.get('/api/session',async req=>publicPrincipal(req.principal!));
+ app.get('/api/preferences',async req=>{
+  const saved=db.prepare('SELECT language,theme FROM user_preferences WHERE user_id=?').get(req.principal!.userId);
+  const result=preferences.safeParse(saved&&{...saved});
+  return result.success?result.data:{language:'nl',theme:'system'};
+ });
+ app.put('/api/preferences',async req=>{
+  const value=preferences.parse(req.body);
+  db.prepare(`INSERT INTO user_preferences(user_id,language,theme) VALUES (?,?,?)
+   ON CONFLICT(user_id) DO UPDATE SET language=excluded.language,theme=excluded.theme`)
+   .run(req.principal!.userId,value.language,value.theme);
+  return value;
+ });
  app.post('/api/logout',async(req,reply)=>{
   db.prepare('DELETE FROM user_sessions WHERE id=? AND user_id=?').run(digest(req.cookies[cookieName]!),req.principal!.userId);
   reply.clearCookie(cookieName,{path:'/',secure:c.secureCookie,httpOnly:true,sameSite:'strict'});return {ok:true};

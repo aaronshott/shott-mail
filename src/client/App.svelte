@@ -2,23 +2,56 @@
  import {onMount,tick} from 'svelte';
  import EndpointFields from './EndpointFields.svelte';
  import SentSettings from './SentSettings.svelte';
+ import FolderNavigation from './FolderNavigation.svelte';
+ import {accountFilter} from './navigation.js';
+ import {translate,hasMessage,UiError} from './i18n.js';
  let maxDraftChars=200000,mailMode='disabled';
  let logged=false,password='',csrf='',error='',notice='',busy=false,accounts=[],messages=[],drafts=[],filter='all',page=0,hasMore=false,view='inbox',reader=null,editor=null,settings=null,dirty=false;
  let loginName='',role='',identity='',users=[],newLogin='',newPassword='';
- let folders=[],activeFolder=null,folderIndex=0,folderValidity='',filingNotice='',observation='';
+ let activeFolder=null,folderIndex=0,folderValidity='',filingNotice='',observation='';
+ let explicitAccount=null,folderEpochs={},mobileNav=false,navToggle,lastReadButton;
+ let language='nl',theme='system',preferenceForm,returnView='inbox';
+ $: t=translate.bind(null,language);
+ $: locale=language==='en'?'en-GB':'nl-NL';
+ $: numbers=new Intl.NumberFormat(locale);
+ $: dates=new Intl.DateTimeFormat(locale,{dateStyle:'medium'});
+ $: applyAppearance(language,theme);
+ function applyAppearance(lang,appearance){document.documentElement.lang=lang;document.documentElement.dataset.theme=appearance;}
+ const connectionText=(t,result)=>t(result==='OK'?'connectionOK':result==='POLICY'?'connectionPolicy':'connectionFailed');
+ function noticeText(t,value){
+  if(!Array.isArray(value))return t(value);
+  if(value[0]==='accountTest')return t(value[0],{imap:connectionText(t,value[1].imap),smtp:connectionText(t,value[1].smtp)});
+  if(value[0]==='sendStatus')return status(t,value[1]);
+  return t(...value);
+ }
+ function invalid(e){const field=e.target;field.setCustomValidity(t(field.validity.valueMissing?'required':field.validity.typeMismatch&&field.type==='email'?'invalidEmail':'invalidField'));}
+ function clearValidation(e){e.target.setCustomValidity?.('');}
  let navigation=0;
  $: currentPage=view==='folder'?folderIndex:page;
  const emptyEndpoint=(port)=>({host:'',port,tls:'implicit',user:'',password:''});
- const describe={LOGIN_REQUIRED:'Sessie verlopen. Meld opnieuw aan; invoer blijft in deze open tab.',LOGIN_FAILED:'Aanmelden mislukt.',LOGIN_EXISTS:'Deze loginnaam is al in gebruik.',ADMIN_REQUIRED:'Alleen de beheerder mag gebruikers beheren.',TRY_LATER:'Te veel pogingen. Wacht even.',REQUEST_FAILED:'Actie mislukt. Controleer invoer, verbinding en serverconfiguratie.',DRAFT_CONFLICT:'Concept gewijzigd of account niet beschikbaar. Je invoer is behouden; overschrijf niet blind.',SEND_LOCKED:'Deze verzendoperatie staat vast. Niet opnieuw versturen.',ACCOUNT_HAS_DRAFTS:'Account heeft concepten/verzendhistorie en kan nog niet verwijderd worden.'};
+
  async function api(path,method='GET',data){
   const session=csrf;
-  let response;try{response=await fetch(path,{method,headers:{'Content-Type':'application/json',...(session?{'x-csrf-token':session}:{})},...(data?{body:JSON.stringify(data)}:{})});}catch{throw new Error('Geen verbinding. Invoer niet automatisch opgeslagen. Niet sluiten of herladen.');}
-  const value=await response.json();if(!response.ok){if((response.status===401||value.error==='CSRF')&&path!=='/api/login'&&csrf===session){logged=false;csrf='';role='';clearWorkspace(true);}throw new Error(describe[value.error]||folderErrors[value.error]||value.error||'Actie mislukt');}return value;
+  let response,value;try{response=await fetch(path,{method,headers:{...(data?{'Content-Type':'application/json'}:{}),...(session?{'x-csrf-token':session}:{})},...(data?{body:JSON.stringify(data)}:{})});value=await response.json();}catch{throw new UiError('network');}
+  if(!response.ok){
+   const expired=(response.status===401||value.error==='CSRF')&&path!=='/api/login';
+   if(expired&&csrf===session){logged=false;csrf='';role='';clearWorkspace(true);}
+   throw new UiError(expired?'LOGIN_REQUIRED':hasMessage(value.error)?value.error:'REQUEST_FAILED');
+  }return value;
  }
- const folderErrors={MAIL_UNAVAILABLE:'IMAP niet beschikbaar. Controleer de verbinding bij Accounts.',FOLDER_UNAVAILABLE:'Deze IMAP-map is niet meer beschikbaar. Laad de mappenlijst opnieuw.',MESSAGE_IDENTITY_CHANGED:'De map is gewijzigd. Vernieuw de berichtenlijst voordat je verder leest.'};
- async function action(fn){if(busy)return;busy=true;error='';try{await fn();}catch(e){error=e.message;}finally{busy=false;}}
+ async function action(fn){if(busy)return;busy=true;error='';try{await fn();}catch(e){error=e instanceof UiError?e:new UiError('REQUEST_FAILED');}finally{busy=false;}}
  function clearRows(){messages=[];hasMore=false;}
- function enter(next){navigation++;reader=null;if(next==='inbox'&&view!=='inbox')clearRows();view=next;}
+ function enter(next,preserveRows=false){navigation++;reader=null;if(next==='inbox'&&view!=='inbox'&&!preserveRows)clearRows();view=next;}
+ async function focusView(stamp=navigation){await tick();if(logged&&stamp===navigation)document.querySelector('.workspace h1')?.focus();}
+ function goView(next,preserveRows=false){enter(next,preserveRows);mobileNav=false;return focusView();}
+ function toggleMobile(){mobileNav=!mobileNav;}
+ function closeNavigation(e){if(e.key!=='Escape'||!mobileNav||!matchMedia('(max-width:760px)').matches)return;e.preventDefault();mobileNav=false;navToggle?.focus();}
+ function setAccounts(owned){
+  if(explicitAccount&&explicitAccount!=='all'&&!owned.some(a=>a.id===explicitAccount))explicitAccount=null;
+  const next=accountFilter(owned,explicitAccount);
+  if(next!==filter){filter=next;page=0;clearRows();}
+  accounts=owned;
+ }
  async function inNavigation(fn){
   const stamp=navigation,current=()=>logged&&navigation===stamp;
   try{await fn(current);}catch(e){if(current()||!logged)throw e;}
@@ -26,62 +59,83 @@
  async function refresh(){await inNavigation(async current=>{
   const config=await api('/api/config'),owned=await api('/api/accounts');
   if(!current())return;
-  ({maxDraftChars,mailMode}=config);accounts=owned;
-  if(filter!=='all'&&!accounts.some(a=>a.id===filter)){filter='all';page=0;clearRows();}
+  ({maxDraftChars,mailMode}=config);setAccounts(owned);
   if(view==='inbox'){
    const r=await api(`/api/inbox?account=${filter}&page=${page}`);
    if(!current())return;
    messages=messageRows(r);hasMore=r.hasMore;
-   if(r.errors.length)error='Inbox onvolledig: '+r.errors.map(e=>accounts.find(a=>a.id===e.accountId)?.label||'account').join(', ')+'. Controleer verbinding/TLS/aanmelding bij Accounts.';
+   if(r.errors.length)error=new UiError('incompleteInbox',{accounts:r.errors.map(e=>accounts.find(a=>a.id===e.accountId)?.label||e.accountId).join(', ')});
   }
   const loaded=await api('/api/drafts');if(current())drafts=loaded;
  });}
  function clearWorkspace(keepEditor=false){
-  accounts=[];messages=[];drafts=[];reader=null;settings=null;users=[];newLogin='';newPassword='';filter='all';page=0;hasMore=false;notice='';folders=[];activeFolder=null;folderValidity='';filingNotice='';observation='';
+  accounts=[];messages=[];drafts=[];reader=null;settings=null;users=[];newLogin='';newPassword='';filter='all';explicitAccount=null;page=0;hasMore=false;notice='';activeFolder=null;folderValidity='';filingNotice='';observation='';folderEpochs={};mobileNav=false;lastReadButton=null;
+  language='nl';theme='system';preferenceForm=null;returnView='inbox';
   if(!keepEditor){editor=null;dirty=false;}enter(editor?'compose':'inbox');
  }
  function activate(r){if(identity!==r.login)clearWorkspace();identity=r.login;loginName=r.login;role=r.role;csrf=r.csrf;logged=true;}
- async function login(){await action(async()=>{
-  if(dirty&&identity&&loginName.trim().toLowerCase()!==identity&&!confirm('Aanmelden als een andere gebruiker wist het actieve concept uit deze tab. Doorgaan?'))return;
-  try{activate(await api('/api/login','POST',{login:loginName,password}));await refresh();}finally{password='';}
+ async function loadWorkspace(){
+  const session=csrf;let preferenceError;
+  try{const saved=await api('/api/preferences');if(logged&&csrf===session)({language,theme}=saved);}
+  catch(e){if(!logged||csrf!==session)throw e;preferenceError=e;}
+  await refresh();if(preferenceError)throw preferenceError;
+ }
+ function openPreferences(){
+  if(view==='preferences')return;
+  preferenceForm={language,theme};returnView=view;notice='';return goView('preferences');
+ }
+ async function savePreferences(){await action(async()=>{
+  const session=csrf;
+  const saved=await api('/api/preferences','PUT',preferenceForm);
+  if(logged&&csrf===session){({language,theme}=saved);notice='preferencesSaved';}
  });}
- async function logout(){await action(async()=>{if(dirty&&!confirm('Niet-opgeslagen invoer gaat bij uitloggen verloren. Toch uitloggen?'))return;await api('/api/logout','POST',{});logged=false;csrf='';role='';identity='';loginName='';clearWorkspace();});}
- async function openUsers(){await action(()=>inNavigation(async current=>{const loaded=await api('/api/admin/users');if(current()){users=loaded;enter('users');notice='';}}));}
+ function closePreferences(){
+  if(returnView==='inbox'&&!messages.length)return goInbox();
+  if(returnView==='folder'&&!accounts.some(a=>a.id===activeFolder?.account))return goInbox();
+  if(returnView==='compose')return resumeDraft();
+  return goView(returnView,true);
+ }
+ async function login(){await action(async()=>{
+  if(dirty&&identity&&loginName.trim().toLowerCase()!==identity&&!confirm(t('otherUser')))return;
+  try{activate(await api('/api/login','POST',{login:loginName,password}));await loadWorkspace();}finally{password='';}
+ });}
+ async function logout(){await action(async()=>{if(dirty&&!confirm(t('logoutDirty')))return;await api('/api/logout','POST',{});logged=false;csrf='';role='';identity='';loginName='';clearWorkspace();});}
+ async function openUsers(){await action(()=>inNavigation(async current=>{const loaded=await api('/api/admin/users');if(current()){users=loaded;notice='';await goView('users');}}));}
  async function createUser(){await action(async()=>{
-  try{const created=await api('/api/admin/users','POST',{login:newLogin,password:newPassword});newLogin='';users=await api('/api/admin/users');notice=`Gebruiker ${created.login} aangemaakt.`;}
+  try{const created=await api('/api/admin/users','POST',{login:newLogin,password:newPassword});newLogin='';users=await api('/api/admin/users');notice=['userCreated',{login:created.login}];}
   finally{newPassword='';}
  });}
- function newDraft(reply){editor={id:crypto.randomUUID(),accountId:reply?.accountId||(filter==='all'?'':filter),revision:0,to:reply?.replyTo||'',subject:reply?'Re: '+reply.subject:'',text:reply?'\n\n'+reply.text:'',operation:null};dirty=true;enter('compose');notice='Nog niet opgeslagen. Sluiten/herladen kan invoer verliezen.';}
+ function newDraft(reply){editor={id:crypto.randomUUID(),accountId:reply?.accountId??(view==='folder'?activeFolder.account:filter==='all'?'':filter),revision:0,to:reply?.replyTo||'',subject:reply?'Re: '+reply.subject:'',text:reply?'\n\n'+reply.text:'',operation:null};dirty=true;observation='';notice='draftUnsaved';return goView('compose');}
  async function save(){
   const draft=editor;
   const r=await api(`/api/drafts/${draft.id}`,'PUT',{accountId:draft.accountId,revision:draft.revision,to:draft.to,subject:draft.subject,text:draft.text});
   if(editor!==draft)return null;
-  editor={...draft,revision:r.revision};dirty=false;notice='Opgeslagen op Shott Mail, niet gesynchroniseerd naar IMAP Drafts.';return editor;
+  editor={...draft,revision:r.revision};dirty=false;notice='draftSaved';return editor;
  }
- const acceptedNotice='SMTP-server heeft het bericht geaccepteerd.';
- function isSendResult(draft,op){return op?.id===draft.id&&!!status(op);}
+ const acceptedNotice='acceptedNotice';
+ function isSendResult(draft,op){return op?.id===draft.id&&hasMessage('send.'+op.state);}
  async function applySendResult(draft,op){
   // The editor instance is the request's local identity, even if the same draft is reopened.
   if(editor!==draft)return;
-  if(op.state!=='accepted'){editor={...draft,operation:op};notice=status(op);return;}
+  if(op.state!=='accepted'){editor={...draft,operation:op};notice=['sendStatus',op];return;}
   editor=null;dirty=false;notice=acceptedNotice;filingNotice=filingStatus(op);
+  if(view==='preferences'&&returnView==='compose')returnView='inbox';
   if(view!=='compose')return;
-  enter('inbox');
-  await tick();document.getElementById('inboxtitle')?.focus();
+  await goView('inbox');
   await refresh();
  }
  async function send(){await action(async()=>{
   if(!editor||editor.operation)return;
   const saved=await save();if(!saved||editor!==saved)return;
   const pending={...saved,operation:{id:saved.id,state:'preparing'}};
-  editor=pending;notice='Verzending wordt aangeboden; niet opnieuw versturen.';
+  editor=pending;notice='sending';
   let op;
   try{
    op=await api(`/api/drafts/${pending.id}/send`,'POST',{revision:pending.revision});
-   if(!isSendResult(pending,op))throw new Error('Geen geldige verzendstatus ontvangen.');
+   if(!isSendResult(pending,op))throw new UiError('invalidReceipt');
   }catch(e){
    if(editor!==pending)return;
-   editor={...pending,operation:{id:pending.id,state:'outcome_unknown'}};notice=status(editor.operation);throw e;
+   editor={...pending,operation:{id:pending.id,state:'outcome_unknown'}};notice=['sendStatus',editor.operation];throw e;
   }
   await applySendResult(pending,op);
  });}
@@ -93,44 +147,49 @@
   if(editor!==draft)return;
   if(d?.id!==draft.id||d.revision!==draft.revision||!isSendResult(draft,d.operation)){
    // No matching receipt is not proof that the previous POST did not send.
-   notice='Geen bevestigde verzendstatus. Concept behouden; niet opnieuw versturen.';return;
+   notice='noReceipt';return;
   }
   await applySendResult(draft,d.operation);
  });}
- function filingStatus(op){return ({pending:'Opslaan in Verzonden wordt voorbereid.',appending:'Opslaan in Verzonden loopt.',filed:'Kopie door IMAP geaccepteerd in Verzonden.',observed:'Kopie met dit Message-ID gezien in Verzonden. Dit bewijst niet dat er maar één kopie is.',provider_unverified:'De provider beheert de kopie. Deze is nog niet bevestigd; Shott Mail voegt geen kopie toe.',needs_folder:'Geen eenduidige Verzonden-map. Kies een map bij Accounts voor toekomstige berichten; dit bericht wordt niet opnieuw aangeboden.',failed:'Verzonden-kopie niet opgeslagen door Shott Mail. Het bericht is wel door SMTP geaccepteerd; niet opnieuw verzenden.',uncertain:'IMAP-uitkomst onbekend: er kan al een kopie zijn. Shott Mail probeert niet opnieuw op te slaan.'})[op?.filing?.status]||'Geen IMAP-kopie geregistreerd voor deze eerdere verzending.';}
- function status(op){return ({preparing:'Voorbereiding loopt. Controleer status; niet opnieuw verzenden.',submitting:'Verzending loopt. Niet opnieuw verzenden.',accepted:'SMTP-server heeft geaccepteerd; dit bewijst geen aflevering. '+filingStatus(op),partial_recipients:'Gedeeltelijk geaccepteerd. Niet opnieuw naar iedereen versturen.',outcome_unknown:'Uitkomst onbekend: mogelijk al verzonden. Controleer bij ontvanger/provider; ontbreken van een Sent-kopie bewijst niets. Niet blind opnieuw versturen.',failed_before_submit:'Niet aangeboden: verbinding/TLS/auth/configuratie faalde. Tekst behouden. Deze operatie blijft geblokkeerd; maak pas na controle bewust een nieuw bericht.'})[op?.state]||'';}
+ function filingStatus(op){const key='filing.'+op?.filing?.status;return hasMessage(key)?key:'filing.none';}
+ function status(t,op){return t('send.'+op?.state)+(op?.state==='accepted'?' '+t(filingStatus(op)):'');}
  async function checkCopy(){await action(async()=>{
   const draft=editor;const op=await api(`/api/drafts/${draft.id}/check-sent`,'POST',{});
   if(editor!==draft||!isSendResult(draft,op))return;
   editor={...draft,operation:op};
-  observation=op.filing?.status==='observed'?'':({not_seen:'Niet gezien. Een vertraagde, verplaatste of gewijzigde kopie is nog mogelijk; er wordt niets toegevoegd.',needs_folder:'Geen eenduidige map voor deze verzending. Controleer de kopie bij je provider.',unavailable:'IMAP-controle niet beschikbaar; de kopiestatus blijft onzeker.',account_changed:'Het IMAP-account is gewijzigd; de oorspronkelijke bestemming kan niet worden gecontroleerd.'})[op.observation]||'';
+  observation=op.filing?.status==='observed'?'':'observation.'+op.observation;
  });}
  const folderBase=(account,folder)=>`/api/accounts/${account}/folders/${folder}/messages`;
  // Capture the reader route when rows arrive, never from the view at click time.
  function messageRows(result,folder){return result.messages.map(m=>({...m,source:Object.freeze({owner:identity,session:csrf,
   url:folder?`${folderBase(m.accountId,folder)}/${m.validity}/${m.uid}`:`/api/messages/${m.accountId}/${m.validity}/${m.uid}`})}));}
- async function showFolders(){await action(async()=>{
-  enter('folders');activeFolder=null;folderValidity='';folders=[];clearRows();notice='';
-  if(filter!=='all')await inNavigation(async current=>{const loaded=await api(`/api/accounts/${filter}/folders`);if(current())folders=loaded;});
- });}
- function changeAccount(){page=0;clearRows();if(view==='folders'||view==='folder')return showFolders();return goInbox();}
- function goInbox(){return action(async()=>{enter('inbox');await refresh();});}
+ function changeAccount(e){explicitAccount=e.currentTarget.value;setAccounts(accounts);page=0;clearRows();return goInbox();}
+ function goInbox(){return action(async()=>{await goView('inbox');if(view==='inbox')await refresh();});}
+ function goDrafts(){const focused=goView('drafts');return action(async()=>{await focused;if(view==='drafts')await refresh();});}
+ function resumeDraft(){if(notice==='preferencesSaved')notice=dirty?'draftUnsaved':'';return goView('compose');}
+ function loadDraft(d){
+  if(dirty&&!confirm(t('replaceDraft')))return;
+  editor={id:d.id,accountId:d.accountId,revision:d.revision,...d.body,operation:d.operation};
+  dirty=false;observation='';notice='draftLoaded';return goView('compose');
+ }
  function pageMail(next){return action(async()=>{if(view==='folder')await folderPage(activeFolder,next,true);else{enter('inbox');clearRows();page=next;await refresh();}});}
  async function folderPage(folder,next,keepValidity=false){
   reader=null;
   const validity=keepValidity?`&validity=${folderValidity}`:'';
   await inNavigation(async current=>{
-   const result=await api(`${folderBase(filter,folder.id)}?page=${next}${validity}`);
-   if(!current())return;
+   const result=await api(`${folderBase(folder.account,folder.id)}?page=${next}${validity}`);
+   if(!current()||!accounts.some(a=>a.id===folder.account))return;
    enter('folder');activeFolder=folder;folderValidity=result.validity;folderIndex=next;messages=messageRows(result,folder.id);hasMore=result.hasMore;
+   if(!keepValidity){mobileNav=false;await focusView();}
   });
  }
- async function openMail(m){await action(()=>inNavigation(async current=>{
+ async function openMail(m,button){await action(()=>inNavigation(async current=>{
   if(!messages.includes(m)||m.source.owner!==identity||m.source.session!==csrf)return;
   const loaded=await api(m.source.url);
   if(!current()||!messages.includes(m))return;
-  reader=loaded;await tick();if(current())document.getElementById('readtitle')?.focus();
+  lastReadButton=button;reader=loaded;await tick();if(current()&&reader===loaded)document.getElementById('readtitle')?.focus();
  }));}
+ async function closeReader(){const stamp=navigation;reader=null;await tick();if(stamp!==navigation)return;if(lastReadButton?.isConnected)lastReadButton.focus();else await focusView(stamp);}
  function editAccount(a){settings=a?structuredClone(a):{label:'',address:'',imap:emptyEndpoint(993),smtp:emptyEndpoint(465)};settings.imap.password='';settings.smtp.password='';enter('accounts');notice='';}
  async function saveSent(id,data){await action(async()=>{
   const form=settings,session=csrf,stamp=navigation;
@@ -138,7 +197,7 @@
    const {sent}=await api(`/api/accounts/${id}/sent`,'PUT',data);
    if(!logged||csrf!==session)return;
    accounts=accounts.map(a=>a.id===id?{...a,sent}:a);
-   if(navigation===stamp&&settings===form)notice='Verzonden-instellingen opgeslagen voor toekomstige berichten.';
+   if(navigation===stamp&&settings===form)notice='sentSaved';
   }catch(e){if(navigation===stamp||!logged)throw e;}
  });}
  async function saveAccount(){await action(()=>inNavigation(async current=>{
@@ -150,55 +209,188 @@
    if(settings.imap.password===imap.password)settings.imap.password='';
    if(settings.smtp.password===smtp.password)settings.smtp.password='';
   }
-  const owned=await api('/api/accounts');if(logged&&csrf===session)accounts=owned;
-  if(current())notice='Account opgeslagen. Test IMAP en SMTP afzonderlijk; opslaan bewijst geen verbinding.';
+  folderEpochs={...folderEpochs,[result.id]:(folderEpochs[result.id]??0)+1};
+  const owned=await api('/api/accounts');if(logged&&csrf===session)setAccounts(owned);
+  if(current())notice='accountSaved';
  }));}
  async function testAccount(){await action(()=>inNavigation(async current=>{
   const result=await api(`/api/accounts/${settings.id}/test`,'POST',{});
-  if(current())notice=`IMAP: ${result.imap}; SMTP: ${result.smtp}. Geen testmail verzonden. Controleer host, poort, TLS en inloggegevens bij fouten.`;
+  if(current())notice=['accountTest',result];
  }));}
  async function deleteAccount(){await action(()=>inNavigation(async()=>{
-  if(!confirm('Alleen lokaal account verwijderen, geen mail bij provider?'))return;
+  if(!confirm(t('confirmDeleteAccount')))return;
   const form=settings,session=csrf;
   await api(`/api/accounts/${form.id}`,'DELETE');
   if(!logged||csrf!==session)return;
   if(settings===form)settings=null;
-  accounts=accounts.filter(a=>a.id!==form.id);
+  setAccounts(accounts.filter(a=>a.id!==form.id));
  }));}
  function leaveWarning(e){if(dirty){e.preventDefault();e.returnValue='';}}
- onMount(()=>{action(async()=>{try{activate(await api('/api/session'));}catch{return;}await refresh();});});
+ onMount(()=>{action(async()=>{try{activate(await api('/api/session'));}catch(e){if(e.key!=='LOGIN_REQUIRED')throw e;return;}await loadWorkspace();});});
 </script>
 
-<style>
- .folder-list{padding-inline-start:1.25rem}
- .folder-list li{margin-block:.35rem;overflow-wrap:anywhere}
- .folder-list button{white-space:normal;text-align:start;max-width:100%}
- #inboxtitle{overflow-wrap:anywhere}
-</style>
-<svelte:window onbeforeunload={leaveWarning}/>
-<header><div class="brand"><span class="mark">s</span> Shott Mail</div><span class="tag">IMAP / SMTP</span>{#if logged}<span class="tag">{identity}</span><button onclick={logout} disabled={busy}>Uitloggen</button>{/if}</header>
+<svelte:window onbeforeunload={leaveWarning} onkeydown={closeNavigation} oninvalidcapture={invalid} oninput={clearValidation}/>
+<header>
+ <div class="brand"><span class="mark">s</span> Shott Mail</div><span class="tag">IMAP / SMTP</span>
+ {#if logged}
+  <span class="tag">{identity}</span>
+  <div class="header-actions">
+   <button class="mobile-nav-toggle" bind:this={navToggle} onclick={toggleMobile} aria-controls="mailbox-nav" aria-expanded={mobileNav}>{t('mailboxNav')}</button>
+   <button onclick={openPreferences} disabled={view==='preferences'}>{t('settings')}</button>
+   <button onclick={logout} disabled={busy}>{t('logout')}</button>
+  </div>
+ {/if}
+</header>
 {#if !logged}
- <main class="login"><h1>Een rustige plek voor je mail.</h1><p>Meld aan met je eigen Shott Mail-account. Nog geen account? Vraag je beheerder.</p><form onsubmit={e=>{e.preventDefault();login();}}><label>Loginnaam<input autocomplete="username" bind:value={loginName} maxlength="64" required/></label><label>Wachtwoord<input type="password" autocomplete="current-password" bind:value={password} maxlength="1024" required/></label><button class="primary" disabled={busy}>Aanmelden</button></form>{#if editor}<p>Je actieve concept blijft alleen beschikbaar als je opnieuw aanmeldt als dezelfde gebruiker. Niet herladen.</p>{/if}</main>
+ <main class="login">
+  <h1>{t('loginTitle')}</h1><p>{t('loginIntro')}</p>
+  <form onsubmit={e=>{e.preventDefault();login();}}>
+   <label>{t('loginName')}<input autocomplete="username" bind:value={loginName} maxlength="64" required/></label>
+   <label>{t('password')}<input type="password" autocomplete="current-password" bind:value={password} maxlength="1024" required/></label>
+   <button class="primary" disabled={busy}>{t('login')}</button>
+  </form>
+  {#if editor}<p>{t('reauthDraft')}</p>{/if}
+ </main>
 {:else}
  <div class="shell" class:reading={!!reader}>
-  <aside><div class="eyebrow">JOUW MAILBOXEN</div><label>Account<select bind:value={filter} disabled={busy} onchange={changeAccount}><option value="all">Alle accounts</option>{#each accounts as a}<option value={a.id}>{a.label} · {a.address}</option>{/each}</select></label><button class="primary" onclick={()=>newDraft(null)} disabled={!!editor&&dirty}>+ Nieuw bericht</button><nav><button onclick={goInbox} disabled={busy}>Inbox</button><button onclick={showFolders} disabled={busy}>IMAP-mappen</button><button onclick={()=>action(async()=>{enter('drafts');await refresh();})}>Concepten / verzendstatus</button><button onclick={()=>enter('accounts')}>Accounts</button>{#if role==='admin'}<button onclick={openUsers}>Gebruikers</button>{/if}{#if editor}<button onclick={()=>enter('compose')}>Actief concept hervatten</button>{/if}</nav><p class="motto">Een rustige plek<br/>voor al je mail.</p></aside>
+  <aside id="mailbox-nav" class:mobile-open={mobileNav} aria-label={t('mailboxNav')}>
+   <div class="eyebrow">{t('mailboxes')}</div>
+   {#if accounts.length>1}
+    <label>{t('account')}<select value={filter} disabled={busy} onchange={changeAccount}>
+     <option value="all">{t('allAccounts')}</option>
+     {#each accounts as a}<option value={a.id}>{a.label} · {a.address}</option>{/each}
+    </select></label>
+   {/if}
+   <button class="primary" onclick={()=>newDraft(null)} disabled={!accounts.length||!!editor&&dirty}>{t('newMessage')}</button>
+   <nav aria-label={t('mailboxNav')}>
+    <button onclick={goInbox} disabled={busy} aria-current={view==='inbox'?'page':undefined}>{t('inbox')}</button>
+    {#if accounts.length}
+     <div class="folder-section" role="group" aria-label={t('folders')}>
+      <div class="folder-heading">{t('folders')}</div>
+      {#each accounts as account (account.id)}
+       {#key folderEpochs[account.id]}
+        <FolderNavigation {account} {api} {t} {busy} active={view==='folder'&&activeFolder.account===account.id?activeFolder.id:null} onPick={folder=>action(()=>folderPage(folder,0))}/>
+       {/key}
+      {/each}
+     </div>
+    {/if}
+    <button onclick={goDrafts} aria-current={view==='drafts'?'page':undefined}>{t('draftsNav')}</button>
+    <button onclick={()=>goView('accounts')} aria-current={view==='accounts'?'page':undefined}>{t('accounts')}</button>
+    {#if role==='admin'}<button onclick={openUsers} aria-current={view==='users'?'page':undefined}>{t('users')}</button>{/if}
+    {#if editor}<button onclick={resumeDraft}>{t('resumeDraft')}</button>{/if}
+   </nav>
+  </aside>
   <main class="workspace">
-  {#if view==='folders'}
-   <section class="panel"><h1>IMAP-mappen</h1>{#if filter==='all'}<p>Kies één account in het menu om de IMAP-mappen te tonen.</p>{:else}<button onclick={showFolders} disabled={busy}>Mappen vernieuwen</button><ul class="folder-list">{#each folders as folder (folder.id)}<li>{#if folder.selectable}<button onclick={()=>action(()=>folderPage(folder,0))} disabled={busy}><bdi>{folder.path}</bdi>{folder.subscribed?'':' · niet geabonneerd'}</button>{:else}<span><bdi>{folder.path}</bdi> · bovenliggende map</span>{/if}</li>{/each}</ul>{#if !folders.length&&!busy}<p>Geen mappen geladen.</p>{/if}{/if}</section>
-  {:else if view==='inbox'||view==='folder'}
-   <section class="list"><div class="listhead"><div class="eyebrow">JE OVERZICHT</div><h1 id="inboxtitle" tabindex="-1">{#if view==='folder'}<bdi>{activeFolder.path}</bdi>{:else}Inbox{/if}</h1>{#if view==='folder'}<button onclick={showFolders} disabled={busy}>← IMAP-mappen</button>{/if}<div role="status">{#if notice===acceptedNotice}<p>{notice}</p>{/if}</div>{#if notice===acceptedNotice}<p role="status">{filingNotice}</p>{/if}<button onclick={()=>view==='folder'?action(()=>folderPage(activeFolder,0)):action(refresh)} disabled={busy}>Vernieuwen</button><p>Pagina {currentPage+1} per account · nieuwste eerst</p></div>{#each messages as m (m)}<button class="mail" onclick={()=>openMail(m)} disabled={busy}><span>{m.unread?'● ':''}{m.from}</span><strong>{m.subject}</strong><span class="tag">{m.accountLabel} · {m.address}</span></button>{/each}{#if !messages.length}<p class="empty">Geen berichten geladen.{accounts.length?'':' Voeg eerst een account toe.'}</p>{/if}<div class="actions"><button disabled={currentPage===0||busy} onclick={()=>pageMail(currentPage-1)}>Nieuwere</button><button disabled={!hasMore||busy} onclick={()=>pageMail(currentPage+1)}>Oudere</button></div></section>
-   <section class="reader">{#if reader}<button onclick={()=>reader=null}>← Terug naar lijst</button><span class="tag">{reader.accountLabel} · {reader.address}</span><h2 id="readtitle" tabindex="-1">{reader.subject}</h2><p>{reader.from}</p><p class="note">Veilige weergave: externe afbeeldingen, links en actieve inhoud zijn uitgeschakeld.</p>{#if reader.html}<iframe title="Veilige berichtinhoud" sandbox="" srcdoc={'<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src &#39;none&#39;; form-action &#39;none&#39;; base-uri &#39;none&#39;"><meta charset="utf-8">'+reader.html}></iframe><details><summary>Tekstweergave</summary><pre>{reader.text}</pre></details>{:else}<pre>{reader.text}</pre>{/if}{#if reader.attachments.length}<p>Bijlagen aanwezig; downloaden volgt na B1.</p>{/if}<button class="primary" onclick={()=>newDraft(reader)} disabled={!!editor&&dirty}>Beantwoorden</button>{:else}<p class="empty">Selecteer een bericht.</p>{/if}</section>
-  {:else if view==='compose' && editor}
-   <section class="panel"><h1>Bericht opstellen</h1><p class="note">Tekstbericht, één ontvanger. Bewaren gebeurt op Shott Mail. Geen automatische verzending of offline-opslag.</p><form onsubmit={e=>{e.preventDefault();send();}} oninput={()=>dirty=true}><fieldset disabled={!!editor.operation||busy}><label>Van<select bind:value={editor.accountId} required disabled={editor.revision>0}><option value="">Kies bewust een afzender</option>{#each accounts as a}<option value={a.id}>{a.label} · {a.address}</option>{/each}</select></label><label>Aan<input type="email" bind:value={editor.to} required/></label><label>Onderwerp<input bind:value={editor.subject} maxlength="998"/></label><label>Bericht<textarea bind:value={editor.text} maxlength={maxDraftChars}></textarea></label><div class="actions"><button type="submit" class="primary">Verzenden</button><button type="button" onclick={()=>action(save)}>Concept bewaren</button></div></fieldset></form>{#if editor.operation}<p class="note" role="status">{status(editor.operation)}</p><button onclick={checkSend} disabled={busy}>Verzendstatus controleren</button>{#if editor.operation.state==='accepted'&&['provider_unverified','uncertain','needs_folder'].includes(editor.operation.filing?.status)}<button onclick={checkCopy} disabled={busy}>Verzonden-kopie controleren</button><p role="status">{observation}</p>{/if}{/if}</section>
-  {:else if view==='drafts'}
-   <section class="panel"><h1>Concepten en verzendstatus</h1>{#each drafts as d}<button class="mail" onclick={()=>{if(dirty&&!confirm('Actieve onopgeslagen tekst vervangen?'))return;editor={id:d.id,accountId:d.accountId,revision:d.revision,...d.body,operation:d.operation};dirty=false;observation='';enter('compose');notice='Opgeslagen versie geladen.';}}><strong>{d.body.subject||'(Geen onderwerp)'}</strong><span>{accounts.find(a=>a.id===d.accountId)?.address} → {d.body.to}</span><span class="tag">{d.operation?.state||'Concept'} · revisie {d.revision}</span></button>{/each}</section>
-  {:else if view==='users' && role==='admin'}
-   <section class="panel"><h1>Gebruikers beheren</h1><p>Gebruikers beheren hun eigen mailboxen en concepten. Alleen de installatie-eigenaar is beheerder.</p><ul>{#each users as user}<li>{user.login} · {user.role==='admin'?'Beheerder':'Gebruiker'}</li>{/each}</ul><form onsubmit={e=>{e.preventDefault();createUser();}}><label>Nieuwe loginnaam<input bind:value={newLogin} maxlength="64" autocomplete="off" required/></label><label>Nieuw wachtwoord<input type="password" bind:value={newPassword} minlength="16" maxlength="1024" autocomplete="new-password" required/></label><button class="primary" disabled={busy}>Gebruiker aanmaken</button></form></section>
-  {:else if view==='accounts'}
-   <section class="panel"><h1>Accounts</h1><p>{#if mailMode==='public'}Gebruik de openbare DNS-hostnamen van je provider: IMAP 993 (TLS) of 143 (STARTTLS), SMTP 465 (TLS) of 587 (STARTTLS). TLS en geldige certificaten zijn verplicht.{:else if mailMode==='fixture'}Geïsoleerde testmodus: alleen de ingestelde testservers zijn toegestaan.{:else}Mailverbindingen zijn uitgeschakeld.{/if}</p><div class="actions">{#each accounts as a}<button onclick={()=>editAccount(a)}>{a.label}</button>{/each}<button onclick={()=>editAccount(null)}>Account toevoegen</button></div>{#if settings}<form onsubmit={e=>{e.preventDefault();saveAccount();}}><label>Naam<input bind:value={settings.label} required maxlength="80"/></label><label>Afzenderadres<input type="email" bind:value={settings.address} required/></label><div class="fields"><EndpointFields protocol="IMAP" bind:endpoint={settings.imap} publicMode={mailMode==='public'} saved={!!settings.id}/><EndpointFields protocol="SMTP" bind:endpoint={settings.smtp} publicMode={mailMode==='public'} saved={!!settings.id}/></div><button class="primary" disabled={busy}>Account opslaan</button></form>{#if settings.id}{#key settings.id}<SentSettings account={accounts.find(a=>a.id===settings.id)??settings} {api} {action} {busy} onSave={saveSent}/>{/key}<div class="actions"><button onclick={testAccount} disabled={busy}>Opgeslagen instellingen testen</button><button disabled={busy} onclick={deleteAccount}>Account verwijderen</button></div>{/if}{/if}</section>
-  {/if}
+   {#if view==='inbox'||view==='folder'}
+    <section class="list">
+     <div class="listhead">
+      <div class="eyebrow">{t('overview')}</div>
+      <h1 id="inboxtitle" tabindex="-1">{#if view==='folder'}<bdi>{activeFolder.path}</bdi>{:else}{t('inbox')}{/if}</h1>
+      {#if view==='folder'}<p class="tag"><bdi>{accounts.find(a=>a.id===activeFolder.account)?.label}</bdi></p>{/if}
+      <div role="status">{#if notice===acceptedNotice}<p>{t(notice)}</p>{/if}</div>
+      {#if notice===acceptedNotice}<p role="status">{t(filingNotice)}</p>{/if}
+      <button onclick={()=>view==='folder'?action(()=>folderPage(activeFolder,0)):action(refresh)} disabled={busy}>{t('refresh')}</button>
+      <p>{t('page',{page:numbers.format(currentPage+1)})}</p>
+     </div>
+     {#each messages as m (m)}
+      <button class="mail" onclick={e=>openMail(m,e.currentTarget)} disabled={busy}>
+       <span>{#if m.unread}<span aria-label={t('unread')} role="img">●</span> {/if}{m.from}</span>
+       <strong>{m.subjectMissing?t('noSubject'):m.subject}</strong>
+       <span class="tag">{m.accountLabel} · {m.address}</span>
+       {#if m.date}<time datetime={m.date}>{dates.format(new Date(m.date))}</time>{/if}
+      </button>
+     {/each}
+     {#if !messages.length}<p class="empty">{t('emptyMail')} {accounts.length?'':t('addFirst')}</p>{/if}
+     <div class="actions"><button disabled={currentPage===0||busy} onclick={()=>pageMail(currentPage-1)}>{t('newer')}</button><button disabled={!hasMore||busy} onclick={()=>pageMail(currentPage+1)}>{t('older')}</button></div>
+    </section>
+    <section class="reader">
+     {#if reader}
+      <button onclick={closeReader}>{t('backToList')}</button><span class="tag">{reader.accountLabel} · {reader.address}</span>
+      <h2 id="readtitle" tabindex="-1">{reader.subjectMissing?t('noSubject'):reader.subject}</h2><p>{reader.from}</p><p class="note">{t('safeView')}</p>
+      {#if reader.html}
+       <iframe title={t('safeBody')} sandbox="" srcdoc={'<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src &#39;none&#39;; form-action &#39;none&#39;; base-uri &#39;none&#39;"><meta charset="utf-8">'+reader.html}></iframe>
+       <details><summary>{t('textView')}</summary><pre>{reader.text}</pre></details>
+      {:else}<pre>{reader.text}</pre>{/if}
+      {#if reader.attachments.length}<p>{t('attachments')}</p>{/if}
+      <button class="primary" onclick={()=>newDraft(reader)} disabled={!!editor&&dirty}>{t('reply')}</button>
+     {:else}<p class="empty">{t('chooseMessage')}</p>{/if}
+    </section>
+   {:else if view==='compose'&&editor}
+    <section class="panel">
+     <h1 tabindex="-1">{t('compose')}</h1><p class="note">{t('composeNote')}</p>
+     <form onsubmit={e=>{e.preventDefault();send();}} oninput={()=>dirty=true} onchange={()=>dirty=true}>
+      <fieldset disabled={!!editor.operation||busy}>
+       <label>{t('from')}<select bind:value={editor.accountId} required disabled={editor.revision>0}>
+        <option value="">{t('chooseSender')}</option>
+        {#if editor.accountId&&!accounts.some(a=>a.id===editor.accountId)}<option value={editor.accountId} disabled>{t('senderUnavailable')}</option>{/if}
+        {#each accounts as a}<option value={a.id}>{a.label} · {a.address}</option>{/each}
+       </select></label>
+       <label>{t('to')}<input type="email" bind:value={editor.to} required/></label>
+       <label>{t('subject')}<input bind:value={editor.subject} maxlength="998"/></label>
+       <label>{t('message')}<textarea bind:value={editor.text} maxlength={maxDraftChars}></textarea></label>
+       <div class="actions"><button type="submit" class="primary" disabled={!!editor.accountId&&!accounts.some(a=>a.id===editor.accountId)}>{t('send')}</button><button type="button" onclick={()=>action(save)} disabled={!!editor.accountId&&!accounts.some(a=>a.id===editor.accountId)}>{t('saveDraft')}</button></div>
+      </fieldset>
+     </form>
+     {#if editor.operation}
+      <p class="note" role="status">{status(t,editor.operation)}</p><button onclick={checkSend} disabled={busy}>{t('checkSend')}</button>
+      {#if editor.operation.state==='accepted'&&['provider_unverified','uncertain','needs_folder'].includes(editor.operation.filing?.status)}
+       <button onclick={checkCopy} disabled={busy}>{t('checkCopy')}</button><p role="status">{t(observation)}</p>
+      {/if}
+     {/if}
+    </section>
+   {:else if view==='drafts'}
+    <section class="panel"><h1 tabindex="-1">{t('draftList')}</h1>
+     {#each drafts as d (d.id)}
+      <button class="mail" onclick={()=>loadDraft(d)}>
+       <strong>{d.body.subject||t('noSubject')}</strong><span>{accounts.find(a=>a.id===d.accountId)?.address} → {d.body.to}</span>
+       <span class="tag">{d.operation?t('state.'+d.operation.state)||t('unknownStatus'):t('draft')} · {t('revision',{revision:numbers.format(d.revision)})}</span>
+      </button>
+     {/each}
+    </section>
+   {:else if view==='preferences'}
+    <section class="panel"><h1 tabindex="-1">{t('personal')}</h1>
+     <form onsubmit={e=>{e.preventDefault();savePreferences();}}>
+      <label>{t('language')}<select bind:value={preferenceForm.language} disabled={busy}><option value="nl" lang="nl">Nederlands</option><option value="en" lang="en">English</option></select></label>
+      <label>{t('theme')}<select bind:value={preferenceForm.theme} disabled={busy}>
+       <option value="system">{t('system')}</option><option value="light">{t('light')}</option><option value="dark">{t('dark')}</option>
+      </select></label>
+      <div class="actions"><button class="primary" disabled={busy}>{t('savePreferences')}</button><button type="button" onclick={closePreferences} disabled={busy}>{t('back')}</button></div>
+     </form>
+    </section>
+   {:else if view==='users'&&role==='admin'}
+    <section class="panel"><h1 tabindex="-1">{t('manageUsers')}</h1><p>{t('usersIntro')}</p>
+     <ul>{#each users as user}<li>{user.login} · {t(user.role==='admin'?'admin':'user')}</li>{/each}</ul>
+     <form onsubmit={e=>{e.preventDefault();createUser();}}>
+      <label>{t('newLogin')}<input bind:value={newLogin} maxlength="64" autocomplete="off" required/></label>
+      <label>{t('newPassword')}<input type="password" bind:value={newPassword} minlength="16" maxlength="1024" autocomplete="new-password" required/></label>
+      <button class="primary" disabled={busy}>{t('createUser')}</button>
+     </form>
+    </section>
+   {:else if view==='accounts'}
+    <section class="panel"><h1 tabindex="-1">{t('accounts')}</h1><p>{t(mailMode==='public'?'publicMode':mailMode==='fixture'?'fixtureMode':'disabledMode')}</p>
+     <div class="actions">{#each accounts as a}<button onclick={()=>editAccount(a)}>{a.label}</button>{/each}<button onclick={()=>editAccount(null)}>{t('addAccount')}</button></div>
+     {#if settings}
+      <form onsubmit={e=>{e.preventDefault();saveAccount();}}>
+       <label>{t('label')}<input bind:value={settings.label} required maxlength="80"/></label>
+       <label>{t('senderAddress')}<input type="email" bind:value={settings.address} required/></label>
+       <div class="fields">
+        <EndpointFields {t} protocol="IMAP" bind:endpoint={settings.imap} publicMode={mailMode==='public'} saved={!!settings.id}/>
+        <EndpointFields {t} protocol="SMTP" bind:endpoint={settings.smtp} publicMode={mailMode==='public'} saved={!!settings.id}/>
+       </div>
+       <button class="primary" disabled={busy}>{t('saveAccount')}</button>
+      </form>
+      {#if settings.id}
+       {#key settings.id}<SentSettings {t} account={accounts.find(a=>a.id===settings.id)??settings} {api} {action} {busy} onSave={saveSent}/>{/key}
+       <div class="actions"><button onclick={testAccount} disabled={busy}>{t('testAccount')}</button><button disabled={busy} onclick={deleteAccount}>{t('deleteAccount')}</button></div>
+      {/if}
+     {/if}
+    </section>
+   {/if}
   </main>
  </div>
 {/if}
-<div class="feedback" aria-live="polite">{#if error}<p role="alert" class="error">{error}</p>{/if}{#if notice&&(view!=='inbox'||notice!==acceptedNotice)}<p>{notice}</p>{/if}</div>
-<footer>Shott Mail · Geen garantie · <a href="/LICENSE">AGPL-licentie</a> · <a href="https://github.com/aaronshott/shott-mail/tree/feat/mailclient-10-multiuser" target="_blank" rel="noreferrer noopener">Broncode</a> · Snooze en PWA-installatie volgen in v1.</footer>
+<div class="feedback" aria-live="polite">
+ {#if error}<p role="alert" class="error">{t(error.key,error.params)}</p>{/if}
+ {#if notice&&(!['inbox','folder'].includes(view)||notice!==acceptedNotice)}<p>{noticeText(t,notice)}</p>{/if}
+</div>
+<footer>Shott Mail · {t('noWarranty')} · <a href="/LICENSE">{t('license')}</a> · <a href="https://github.com/aaronshott/shott-mail/tree/feat/mailclient-10-multiuser" target="_blank" rel="noreferrer noopener">{t('source')}</a> · {t('roadmap')}</footer>
