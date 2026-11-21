@@ -28,11 +28,21 @@ export async function runFolders(){
  click('← Terug naar lijst');click('Nieuwere');await idle();assert(report().includes('Nested 2'),'newer page missing');
  checks.push('unified inbox; nested unsubscribed folder and navigation-only parent; pagination; sanitized read; layout');
  click('Accounts');await idle();click('Werk');await idle();
+ const selects=()=>document.querySelector('.sent-settings').querySelectorAll('select');
+ const stored=async()=>(await (await fetch('/api/accounts')).json()).find(x=>x.id===a.id).sent;
+ const options=[...selects()[0].options];
+ assert(options.map(o=>o.value).join(',')==='client,provider'&&/^Shott Mail \(standaard\)/.test(options[0].textContent)&&/^Provider/.test(options[1].textContent),'expected Shott Mail marked as default, then Provider');
+ assert(selects()[0].value==='client'&&selects()[1].value===''&&!await stored(),'unset account must display Shott Mail and automatic folder without storage');
+ click('Verzonden-instellingen opslaan');await idle();
+ assert((await stored())?.policy==='client','saving the displayed default must persist client');
+ click('Privé');await idle();click('Werk');await idle();
+ assert(selects()[0].value==='client'&&selects()[1].value==='','saved default missing after revisiting account');
  click('Verzonden-mappen laden');await idle();
- const settings=document.querySelector('.sent-settings'),select=settings.querySelectorAll('select');
- assert(select[0].value==='provider','unsafe default policy');set(select[0],'client');
+ const select=selects();
  const option=[...select[1].options].find(o=>o.textContent.includes('Custom & Sent'));assert(option,'missing custom option');set(select[1],option.value);
  click('Verzonden-instellingen opslaan');await idle();layout();
+ click('Privé');await idle();click('Werk');await idle();
+ assert(selects()[0].value==='client'&&selects()[1].value===option.value&&(await stored())?.folder===option.value,'saved custom folder missing after revisiting account');
  const metricsBefore=await metrics();
  async function send(label){
   click('Inbox');await idle();click('+ Nieuw bericht');await idle();
@@ -42,10 +52,10 @@ export async function runFolders(){
  }
  await send('browser success');assert(report().includes('Kopie door IMAP geaccepteerd'),'missing successful copy state');
  click('IMAP-mappen');await idle();click('Shared/Custom & Sent · niet geabonneerd');await idle();assert(report().includes('browser success'),'copy not filed in explicit custom folder');
- checks.push('settings default provider; explicit client and custom folder; copy displayed; composer closed');
+ checks.push('Shott Mail first and marked default; persists only when saved; saved custom folder; copy displayed; composer closed');
  assert((await fetch('/__test_folder_fault',{method:'POST'})).ok,'fixture fault setup');
  await send('browser failure');assert(report().includes('Verzonden-kopie niet opgeslagen'),'filing failure not distinguished');
- const after=await metrics();assert(after.deliveries-metricsBefore.deliveries===2&&after.sendRequests-metricsBefore.sendRequests===2,'unexpected SMTP/POST count');
+ const after=await metrics();assert(after.deliveries-metricsBefore.deliveries===2&&after.sendRequests-metricsBefore.sendRequests===2&&after.appendAttempts-metricsBefore.appendAttempts===2,'unexpected SMTP/POST/APPEND count');
  checks.push('SMTP acceptance closes composer even on tagged APPEND rejection; one request and submission each');
  return {passed:true,viewport:[innerWidth,innerHeight],checks};
 }

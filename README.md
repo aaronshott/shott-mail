@@ -34,11 +34,15 @@ schijnknoppen. Snooze en installeerbare PWA blijven verplicht voor v1, buiten B1
   mappen zijn wegwijzers. Mappen worden alleen gelezen; paginanummers kunnen bij
   gelijktijdige toevoeging/verwijdering verschuiven. Bij gewijzigde UIDVALIDITY:
   vernieuw het mapoverzicht voordat je verder leest.
-- **Accounts → Kopie in Verzonden**: standaard leidt Shott Mail geen providergedrag
-  af en voegt niets toe. Kies **Shott Mail** alleen als je weet dat de provider geen
-  kopie bewaart. Automatische mapkeuze vereist precies één selecteerbare `\Sent` uit
-  de serverlijst; bij geen/meerdere kandidaten kies je zelf een map. Er worden geen
-  mappen aangemaakt en instellingen gelden alleen voor nieuwe verzendingen.
+- **Accounts → Kopie in Verzonden**: voor nieuwe en bestaande accounts zonder
+  opgeslagen keuze is **Shott Mail** de standaard. Na bevestigde SMTP-acceptatie
+  probeert Shott Mail een kopie via IMAP op te slaan. Slaat je provider zelf
+  automatisch een kopie op? Kies dan **Provider**; Shott Mail voegt dan niets toe
+  en voorkomt zo een extra kopie. Eerder opgeslagen keuzes, inclusief een gekozen
+  map, blijven behouden. Automatische mapkeuze vereist precies één selecteerbare
+  `\Sent` uit de serverlijst; bij geen/meerdere kandidaten kies je zelf een map.
+  Er worden geen mappen aangemaakt en instellingen gelden alleen voor toekomstige
+  verzendingen.
 - De applicatie gebruikt één MIME-buffer met één Message-ID voor SMTP en een
   eventuele IMAP APPEND. Na bevestigde SMTP-acceptatie sluit de composer, ook als
   de kopie faalt. Onder **Concepten / verzendstatus** kun je een onbevestigde kopie

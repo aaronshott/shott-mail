@@ -1,6 +1,7 @@
 import {z} from 'zod';
 import {randomUUID} from 'node:crypto';
 import type {FastifyInstance} from 'fastify';
+import {DEFAULT_SENT_POLICY} from '../sent-policy.ts';
 import {Store} from './store.ts';
 import {composeRaw,smtp,testConnection,type Endpoint,type MailPolicy} from './mail.ts';
 import {assertEndpoint} from './mail-policy.ts';
@@ -95,7 +96,7 @@ export function routes(app:FastifyInstance,store:Store,c:MailPolicy){
   db.prepare('INSERT INTO send_operations (owner_id,id,state,result) VALUES(?,?,?,?)').run(owner,id,'preparing','{}');
   const setState=(state:string,result='{}')=>db.prepare('UPDATE send_operations SET state=?,result=? WHERE owner_id=? AND id=?').run(state,result,owner,id);
   let transport;let submitted=false,result,raw:Buffer;
-  const messageId=`<${randomUUID()}@shott-mail.local>`,sent:SentSettings=a.sent??{policy:'provider'};
+  const messageId=`<${randomUUID()}@shott-mail.local>`,sent:SentSettings=a.sent??{policy:DEFAULT_SENT_POLICY};
   try{
    raw=await composeRaw({from:a.address,to:draft.body.to,subject:draft.body.subject,text:draft.body.text,messageId});
    transport=await smtp({...a.smtp,password:credentials.smtp},c);await transport.verify();

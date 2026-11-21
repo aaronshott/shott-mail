@@ -48,4 +48,4 @@ try{
   finally{ws?.close();if(tab?.id)await fetch(endpoint+'/json/close/'+tab.id);await stop(h);}
  }
  console.log(JSON.stringify({browser:Browser,results},null,2));if(results.some(r=>!r.passed))process.exitCode=1;
-}finally{await stop(browser);await rm(profile,{recursive:true,force:true});}
+}finally{await stop(browser);await rm(profile,{recursive:true,force:true,maxRetries:5});}

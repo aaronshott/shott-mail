@@ -1,13 +1,14 @@
 <script>
  import {onDestroy} from 'svelte';
+ import {DEFAULT_SENT_POLICY} from '../sent-policy.ts';
  export let account;
  export let api;
  export let action;
  export let busy;
  export let onSave;
- let folders=[],policy='provider',selection='';
+ let folders=[],policy=DEFAULT_SENT_POLICY,selection='';
  let savedPolicy,savedSelection;
- $: reset(account.sent?.policy??'provider',account.sent?.folder??'');
+ $: reset(account.sent?.policy??DEFAULT_SENT_POLICY,account.sent?.folder??'');
  function reset(nextPolicy,nextSelection){
   if(nextPolicy===savedPolicy&&nextSelection===savedSelection)return;
   savedPolicy=nextPolicy;savedSelection=nextSelection;
@@ -25,11 +26,11 @@
  <h2>Kopie in Verzonden</h2>
  <label>Wie bewaart de kopie?
   <select bind:value={policy} disabled={busy}>
-   <option value="provider">Provider (standaard; Shott Mail voegt niets toe)</option>
-   <option value="client">Shott Mail (alleen als de provider zelf niet opslaat)</option>
+   <option value="client">Shott Mail (standaard)</option>
+   <option value="provider">Provider (Shott Mail voegt niets toe)</option>
   </select>
  </label>
- <p>Weet je het niet? Laat dit op Provider staan. Een kopie kan vertraagd zijn. Kies Shott Mail alleen als je weet dat de provider geen kopie maakt; anders kunnen dubbele kopieën ontstaan.</p>
+ <p>Zonder opgeslagen keuze probeert Shott Mail na bevestigde SMTP-acceptatie een kopie via IMAP op te slaan. Slaat je provider zelf automatisch een kopie op? Kies dan Provider om dubbele kopieën te voorkomen. De kopie van je provider kan vertraagd zijn.</p>
  <button type="button" onclick={load} disabled={busy}>Verzonden-mappen laden</button>
  <label>Verzonden-map
   <select bind:value={selection} disabled={busy}>

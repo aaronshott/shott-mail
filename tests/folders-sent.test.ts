@@ -61,24 +61,35 @@ test('LIST, owned absolute mailbox identity, UIDVALIDITY paging and sanitized UI
 }));
 
 test('provider policies: immediate/delayed/missing saves, checks never append or resubmit',()=>withFixture(async f=>{
+ assert.equal((await f.policy('provider')).statusCode,200);
+ await f.restart();
+ const target=(await f.folders()).find(x=>x.path==='Shared/Verzonden')!;
+ let latestSaved:string|undefined;
  for(const provider of ['auto','delay','none'] as const){
   f.mail.behavior.provider=provider;const id=await f.draft(),before=f.mail.submitted.length;
-  const op=await f.send(id);assert.equal(op.state,'accepted');assert.equal(op.filing.status,'provider_unverified');
+  const op=await f.send(id);assert.equal(op.state,'accepted');assert.equal(op.filing.status,'provider_unverified');assert.deepEqual(op.sent,{policy:'provider'});
   const checked=await f.check(id);
   if(provider==='auto')assert.equal(checked.filing.status,'observed');
   else{assert.equal(checked.observation,'not_seen');assert.equal(checked.filing.status,'provider_unverified');}
   if(provider==='delay'){await f.restart();f.mail.releaseProvider();assert.equal((await f.check(id)).filing.status,'observed');}
+  if(provider!=='none')latestSaved=id;
+  const pageResponse=await f.admin(`${f.folderPath}/${target.id}/messages`);assert.equal(pageResponse.statusCode,200,pageResponse.body);
+  const page=pageResponse.json();assert.equal(page.messages[0]?.subject,`Synthetic ${latestSaved}`);assert.equal(page.hasMore,provider!=='auto');
   assert.equal((await f.send(id)).messageId,op.messageId);assert.equal(f.mail.submitted.length,before+1);assert.equal(f.mail.appendCount(),0);
  }
 }));
 
-test('client policy: exact submitted MIME; absent/dual Sent flags require explicit owned selectable target',()=>withFixture(async f=>{
- assert.equal((await f.policy('client')).statusCode,200);
+test('new unset account: one SMTP submission and one IMAP copy; absent/dual Sent flags require explicit owned selectable target',()=>withFixture(async f=>{
+ const account=async()=>(await f.admin('/api/accounts')).json().find((a:{id:string})=>a.id===f.account);
+ assert.equal((await account()).sent,undefined);
  const id=await f.draft();const outcomes=await Promise.all([f.send(id),f.send(id)]);
  const op=outcomes.find(r=>r.filing?.status==='filed');assert(op);
- assert.equal(f.mail.submitted.length,1);assert.equal(f.mail.appendCount(),1);
+ assert.deepEqual(op.sent,{policy:'client'});
+ assert.equal(f.mail.submitted.length,1);assert.equal(f.mail.appendCount(),1);assert.equal(f.mail.appended.length,1);
+ assert.equal((await account()).sent,undefined);
  assert.equal(f.mail.submitted[0],f.mail.appended[0]);assert(f.mail.appended[0].includes(`Message-ID: ${op.messageId}`));
  const fs=await f.folders(),custom=fs.find(x=>x.path==='Shared/Custom & Sent')!,parent=fs.find(x=>x.path==='Shared')!;
+ assert.equal(op.filing.folder,fs.find(x=>x.path==='Shared/Verzonden')?.id);
  assert.equal((await f.policy('client',parent.id)).statusCode,404);
  for(const flagCount of [0,2]){
   f.mail.behavior.sentFlags=flagCount;const id=await f.draft();const result=await f.send(id);
@@ -86,12 +97,42 @@ test('client policy: exact submitted MIME; absent/dual Sent flags require explic
   assert.equal((await f.check(id)).observation,'needs_folder');
  }
  assert.equal((await f.policy('client',custom.id)).statusCode,200);
+ await f.restart();
+ assert.deepEqual((await account()).sent,{policy:'client',folder:custom.id});
  const selected=await f.send(await f.draft());assert.equal(selected.filing.status,'filed');assert.equal(selected.filing.folder,custom.id);
  assert.equal(f.mail.appendCount(),2);assert.equal(f.mail.submitted.at(-1),f.mail.appended.at(-1));
 }));
 
+test('upgrade: existing unset account uses client for future sends, without backfilling historical operations',()=>withFixture(async f=>{
+ // Produce the same provider-managed operation the old fallback recorded, then restore unset metadata.
+ assert.equal((await f.policy('provider')).statusCode,200);
+ const historicalId=await f.draft(),historical=await f.send(historicalId);
+ assert.equal(historical.filing.status,'provider_unverified');
+ assert.equal(f.mail.submitted.length,1);assert.equal(f.mail.appendCount(),0);
+ const journal=()=>{
+  const store=new Store(f.c.dbPath,f.c.key,f.c.password);
+  try{return store.db.prepare('SELECT state,result FROM send_operations WHERE owner_id=1 AND id=?').get(historicalId);}
+  finally{store.close();}
+ };
+ const original=journal(),metrics=f.mail.metrics();
+ await f.restart(()=>{
+  const store=new Store(f.c.dbPath,f.c.key,f.c.password);
+  try{store.db.prepare("UPDATE mailboxes SET metadata=json_remove(metadata,'$.sent') WHERE owner_id=1 AND id=?").run(f.account);}
+  finally{store.close();}
+ });
+ assert.deepEqual(f.mail.metrics(),metrics);assert.equal(f.mail.appendCount(),0);
+ assert.equal((await f.admin('/api/accounts')).json()[0].sent,undefined);
+ assert.deepEqual(await f.send(historicalId),historical);
+ assert.deepEqual(await f.check(historicalId),{...historical,observation:'not_seen'});
+ assert.deepEqual(journal(),original);
+ assert.equal(f.mail.submitted.length,1);assert.equal(f.mail.appendCount(),0);
+ const next=await f.send(await f.draft());
+ assert.equal(next.state,'accepted');assert.equal(next.filing.status,'filed');assert.deepEqual(next.sent,{policy:'client'});
+ assert.equal(f.mail.submitted.length,2);assert.equal(f.mail.appendCount(),1);assert.equal(f.mail.appended.length,1);
+ assert.equal(f.mail.appended[0],f.mail.submitted[1]);assert.deepEqual(journal(),original);
+}));
+
 test('SMTP uncertainty, tagged APPEND rejection, lost APPEND replies and interrupted journal states',()=>withFixture(async f=>{
- assert.equal((await f.policy('client')).statusCode,200);
  f.mail.behavior.smtpLost=true;
  const unknown=await f.draft();assert.equal((await f.send(unknown)).state,'outcome_unknown');
  assert.equal(f.mail.appendCount(),0);assert.equal((await f.check(unknown)).state,'outcome_unknown');
