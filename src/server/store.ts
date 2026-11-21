@@ -30,6 +30,11 @@ export class Store {
         catch { throw new Error('KEY_MISMATCH'); }
       }
       initializeSchema(this.db,password);
+      // Additive to schema 10: older binaries can still read the installation.
+      this.db.exec(`CREATE TABLE IF NOT EXISTS user_preferences (
+        user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        language TEXT NOT NULL CHECK(language IN ('nl','en')),
+        theme TEXT NOT NULL CHECK(theme IN ('system','light','dark')))`);
       if (!hasMeta) {
         this.db.exec('CREATE TABLE meta (id INTEGER PRIMARY KEY CHECK(id=1), check_value TEXT NOT NULL)');
         this.db.prepare('INSERT INTO meta VALUES (1,?)').run(this.seal('shott-mail-key-check-v1', 'installation'));

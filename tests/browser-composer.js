@@ -32,7 +32,7 @@ export async function runComposer(){
  async function accepted(name){
   assert(!field(),'Accepted operation left composer open');assert(!button('Actief concept hervatten'),'Accepted composer still active');assertOverview();
   assert(document.querySelector('.listhead [role=status]')?.textContent==='SMTP-server heeft het bericht geaccepteerd.','Short, accurate confirmation missing');
-  await draftList();assert(row(name)?.textContent.includes('accepted'),'Accepted draft/history missing');
+  await draftList();assert(row(name)?.textContent.includes('SMTP geaccepteerd'),'Accepted draft/history missing');
  }
  async function once(before,dropped=0){const after=await metrics();const delta=['sendRequests','deliveries','droppedReplies'].map(k=>after[k]-before[k]);assert(delta.join()===`1,1,${dropped}`,`Unexpected POST/delivery/drop counts: ${delta}`);}
  const run=async(name,fn)=>{try{await fn();checks.push({name,pass:true});}catch(e){checks.push({name,pass:false,error:e.message});}}

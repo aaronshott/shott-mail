@@ -30,7 +30,14 @@ export async function runContext(){
  const sentRead=`${sentList}/${validity}/${uid}`,inboxRead=`/api/messages/${work.id}/${validity}/${uid}`;
  const before=await json('/__test_metrics');
  set(document.querySelector('aside select'),work.id);await idle();
- async function showSent(){press('IMAP-mappen');await idle();press('Shared/Verzonden · niet geabonneerd');await idle();assert(rowSubject()===sentSubject,'Seeded Sent row missing');}
+ function pickSent(){const b=document.querySelector('.folder-select[title="Shared/Verzonden"]');assert(b&&!b.disabled,'Missing Sent folder');b.click();}
+ async function showTree(){
+  const nav=document.querySelector('.mobile-nav-toggle');if(nav.getClientRects().length&&nav.getAttribute('aria-expanded')==='false')nav.click();
+  const summary=document.querySelector('.account-folders summary[aria-label="Mappen voor Werk"]');if(!summary.parentElement.open)summary.click();
+  for(let i=0;i<200&&!document.querySelector('.folder-toggle[aria-label="Submappen van Shared"]');i++)await pause(50);
+  const group=document.querySelector('.folder-toggle[aria-label="Submappen van Shared"]');if(group.getAttribute('aria-expanded')==='false')group.click();await pause(20);
+ }
+ async function showSent(){await showTree();pickSent();await idle();assert(rowSubject()===sentSubject,'Seeded Sent row missing');}
  await run('QA17-01: 429 cannot turn a Sent row into an Inbox read',async()=>{
   await showSent();const paths=[];let faults=0;
   window.fetch=(url,...args)=>{paths.push(String(url));if(String(url)===inboxURL&&faults++===0)return Promise.resolve(Response.json({error:'TRY_LATER'},{status:429}));return native(url,...args);};
@@ -65,9 +72,9 @@ export async function runContext(){
   assert(!(await json('/api/accounts')).find(a=>a.id===priv.id).sent,'Failed save changed persistent policy');
  });
  await run('A late folder load cannot replace the composer or lose new text',async()=>{
-  press('IMAP-mappen');await idle();
+  await showTree();
   await hold(url=>url.startsWith(sentList+'?'),async reached=>{
-   press('Shared/Verzonden · niet geabonneerd');assert(await reached()===200,'Folder list request failed');
+   pickSent();assert(await reached()===200,'Folder list request failed');
    press('+ Nieuw bericht');await pause(0);set(document.querySelector('textarea'),'Unsaved QA17 text');
   });
   assert(title()==='Bericht opstellen'&&document.querySelector('textarea')?.value==='Unsaved QA17 text','Delayed folder response replaced the editor');

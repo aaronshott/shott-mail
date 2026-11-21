@@ -3,7 +3,10 @@ export async function runFolders(){
  const pause=ms=>new Promise(r=>setTimeout(r,ms));
  const assert=(v,why)=>{if(!v)throw Error(why);};
  const btn=text=>[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===text);
- const click=text=>{const b=btn(text);assert(b&&!b.disabled,`Missing/disabled: ${text}`);b.click();};
+ const openNav=()=>{const toggle=document.querySelector('.mobile-nav-toggle');if(toggle.getClientRects().length&&toggle.getAttribute('aria-expanded')==='false')toggle.click();};
+ const click=text=>{const b=btn(text);assert(b&&!b.disabled,`Missing/disabled: ${text}`);if(b.closest('aside'))openNav();b.click();};
+ const expand=path=>{const b=[...document.querySelectorAll('.folder-toggle')].find(b=>b.getAttribute('aria-label')===`Submappen van ${path}`);assert(b,`missing folder group ${path}`);if(b.getAttribute('aria-expanded')==='false')b.click();};
+ const pick=path=>{openNav();const b=[...document.querySelectorAll('.folder-select')].find(b=>b.title===path);assert(b,`missing folder ${path}`);b.click();};
  const set=(el,value)=>{assert(el,'missing field');el.value=value;el.dispatchEvent(new Event(el.tagName==='SELECT'?'change':'input',{bubbles:true}));};
  const idle=async()=>{await pause(20);for(let i=0;i<200;i++){if(btn('Uitloggen')&&!btn('Uitloggen').disabled)return;await pause(50);}throw Error('app remained busy');};
  const checks=[];
@@ -16,11 +19,13 @@ export async function runFolders(){
  const metrics=async()=>await (await fetch('/__test_metrics')).json();
  const layout=()=>assert(document.documentElement.scrollWidth<=innerWidth,`horizontal overflow at ${innerWidth}`);
  assert(heading()==='Inbox'&&report().includes('Seed for work')&&report().includes('Seed for private'),'unified Inbox changed');
- click('IMAP-mappen');await idle();assert(report().includes('Kies één account'),'missing account chooser');
- set(filt(),a.id);await idle();layout();
- assert(report().includes('Shared/<b>literal</b>')&&!document.querySelector('.folder-list b'),'markup in folder name parsed');
- assert(!btn('INBOX/Projects · bovenliggende map')&&report().includes('INBOX/Projects · bovenliggende map'),'selectable parent');
- click('INBOX/Projects/旅行 · niet geabonneerd');await idle();assert(heading()==='INBOX/Projects/旅行'&&report().includes('Nested 2'),'wrong folder');
+ set(filt(),a.id);await idle();openNav();await pause(20);
+ document.querySelector('.account-folders summary[aria-label="Mappen voor Werk"]').click();
+ for(let i=0;i<200&&!document.querySelector('.folder-select');i++)await pause(50);
+ expand('Shared');expand('INBOX');await pause(20);expand('INBOX/Projects');expand('Shared/<b>literal<');await pause(20);layout();
+ assert(document.querySelector('.folder-select[title="Shared/<b>literal</b>"]')&&!document.querySelector('.folder-list b'),'markup in folder name parsed');
+ assert(document.querySelector('.folder-label[title="INBOX/Projects"]')&&!document.querySelector('.folder-select[title="INBOX/Projects"]'),'selectable parent');
+ pick('INBOX/Projects/旅行');await idle();assert(heading()==='INBOX/Projects/旅行'&&report().includes('Nested 2'),'wrong folder');
  click('Oudere');await idle();assert(report().includes('Nested 1')&&!report().includes('Nested 2'),'wrong page');
  document.querySelector('.list .mail').click();await idle();
  const iframe=document.querySelector('.reader iframe');
@@ -51,7 +56,7 @@ export async function runFolders(){
   assert(heading()==='Inbox'&&!document.querySelector('textarea')&&report().includes('SMTP-server heeft het bericht geaccepteerd.'),'accepted composer stayed open');
  }
  await send('browser success');assert(report().includes('Kopie door IMAP geaccepteerd'),'missing successful copy state');
- click('IMAP-mappen');await idle();click('Shared/Custom & Sent · niet geabonneerd');await idle();assert(report().includes('browser success'),'copy not filed in explicit custom folder');
+ pick('Shared/Custom & Sent');await idle();assert(report().includes('browser success'),'copy not filed in explicit custom folder');
  checks.push('Shott Mail first and marked default; persists only when saved; saved custom folder; copy displayed; composer closed');
  assert((await fetch('/__test_folder_fault',{method:'POST'})).ok,'fixture fault setup');
  await send('browser failure');assert(report().includes('Verzonden-kopie niet opgeslagen'),'filing failure not distinguished');

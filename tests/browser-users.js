@@ -36,20 +36,33 @@ try{
  await createUser(alice,alicePass);await createUser(bob,bobPass);
  check('both new logins in admin UI',document.querySelector('main ul').innerText.includes(alice)&&document.querySelector('main ul').innerText.includes(bob));
  await click('Uitloggen');await login(alice,alicePass);
- check('Alice starts with no admin mailboxes',options().length===1);
- await addMailbox('alice-work');await addMailbox('alice-private');
+ check('Alice starts with no admin mailboxes',!options().length&&!document.querySelector('.account-folders')&&button('+ Nieuw bericht').disabled);
+ await addMailbox('alice-work');
+ check('adding the only mailbox leaves no account choice',!options().length&&document.querySelectorAll('.account-folders').length===1);
+ await addMailbox('alice-private');
  check('unified selector contains both Alice mailboxes',options().length===3&&options().includes('Alle accounts')&&options().some(v=>v.includes('alice-work'))&&options().some(v=>v.includes('alice-private')));
  await click('+ Nieuw bericht');
  const sender=form().querySelector('select');fill(sender,sender.options[1].value);
  const [to,subject]=form().querySelectorAll('input');fill(to,'recipient@example.test');fill(subject,'Alice only');fill(form().querySelector('textarea'),'Synthetic draft body');
  await click('Concept bewaren');await until('draft saved',()=>document.querySelector('.feedback')?.innerText.includes('Opgeslagen op Shott Mail'));
  await click('Uitloggen');await login(bob,bobPass);
- check('Bob sees no Alice accounts or active editor',options().length===1&&!button('Actief concept hervatten'));
+ check('Bob sees no Alice accounts or active editor',!options().length&&!document.querySelector('.account-folders')&&!button('Actief concept hervatten'));
  await click('Concepten / verzendstatus');await until('Bob draft list',()=>exact('Concepten en verzendstatus'));
  check('Bob does not see the Alice draft',!document.querySelector('main').innerText.includes('Alice only'));
  await addMailbox('bob-work');
- check('Bob only sees own mailbox',options().length===2&&options().some(v=>v.includes('bob-work')));
- await click('Uitloggen');await login(alice,alicePass);
+ check('Bob only sees own mailbox',!options().length&&document.querySelectorAll('.account-folders').length===1&&document.querySelector('.account-folders').textContent.includes('bob-work'));
+ await click('+ Nieuw bericht');await until('single mailbox composer',()=>exact('Bericht opstellen'));
+ check('single mailbox automatically selected for new mail',form().querySelector('select').selectedOptions[0].textContent.includes('bob-work@example.test'));
+ const confirm=window.confirm;window.confirm=()=>true;
+ try{
+  await click('Accounts');await click('bob-work');await click('Account verwijderen');
+  await until('empty workspace',()=>!document.querySelector('.account-folders'));
+  check('removing last mailbox updates navigation without replacing draft',button('+ Nieuw bericht').disabled&&!!button('Actief concept hervatten'));
+  await click('Actief concept hervatten');await until('return to draft',()=>exact('Bericht opstellen'));
+  check('removed sender is not silently reassigned',form().querySelector('select').selectedOptions[0].textContent==='Gekozen afzender niet beschikbaar'&&button('Verzenden').disabled);
+  await click('Uitloggen');
+ }finally{window.confirm=confirm;}
+ await login(alice,alicePass);
  check('Alice still sees her two mailboxes and not Bob’s',options().length===3&&!options().some(v=>v.includes('bob-work')));
  await click('Concepten / verzendstatus');await until('Alice draft list',()=>exact('Concepten en verzendstatus'));
  check('Alice’s saved draft is still visible',document.querySelector('main').innerText.includes('Alice only'));

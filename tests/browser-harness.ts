@@ -24,6 +24,7 @@ app.get<{Querystring:{workflow?:string}}>('/__test_login',async(req,reply)=>{con
 app.get('/__test_users',async(_req,reply)=>reply.type('text/html').send(readFileSync(join(c.staticRoot,'index.html'),'utf8').replace('</body>','<script type="module" src="/__test_users.js"></script></body>')));
 app.get('/__test_users.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-users.js','utf8')));
 app.get('/__test_composer.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-composer.js','utf8')));
+app.get('/__test_settings.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-settings.js','utf8')));
 if(folders&&mail){
  app.get('/__test_folders.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-folders.js','utf8')));
  app.get('/__test_folder_context.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-folder-context.js','utf8')));
