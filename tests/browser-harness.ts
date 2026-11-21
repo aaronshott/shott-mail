@@ -5,6 +5,7 @@ import {startMailFixture} from './mail-fixture.ts';
 mkdirSync('.test-data',{recursive:true,mode:0o700});const dir=mkdtempSync(resolve('.test-data/browser-'));
 const folders=process.argv.includes('--folders');
 const mail=folders||process.argv.includes('--composer')?await startMailFixture(dir,folders):null;
+if(process.argv.includes('--context'))mail?.seedSent();
 const c={dbPath:join(dir,'app.sqlite'),key:randomBytes(32),password:randomBytes(24).toString('base64url'),origin:'http://127.0.0.1',secureCookie:false,allowedMail:mail?.allowedMail??[],sessionMs:3600000,staticRoot:resolve('dist/client'),...(mail?{mailMode:'fixture' as const,ca:mail.ca,timeoutMs:3000}:{}),...(folders?{pageSize:1}:{})};
 const store=new Store(c.dbPath,c.key,c.password);
 for(const label of ['Werk','Privé']){
@@ -16,7 +17,7 @@ const app=await buildApp(c);
 // Fault injection only in this loopback harness: finish the real handler, then lose its HTTP reply.
 let dropNextSend=false,sendRequests=0,droppedReplies=0;
 app.post('/__test_drop_send_response',async()=>{dropNextSend=true;return {armed:true};});
-app.get('/__test_metrics',async()=>({sendRequests,droppedReplies,...mail?.metrics()}));
+app.get('/__test_metrics',async()=>({sendRequests,droppedReplies,...mail?.metrics(),appendAttempts:mail?.appendCount()}));
 app.addHook('onRequest',async req=>{if(req.method==='POST'&&req.url.endsWith('/send'))sendRequests++;});
 app.addHook('onSend',async(req,reply,payload)=>{if(dropNextSend&&req.method==='POST'&&req.url.endsWith('/send')){dropNextSend=false;droppedReplies++;reply.raw.writeHead(200,{'Content-Type':'application/json','Content-Length':'1024'});reply.raw.write('{');await new Promise(resolve=>setTimeout(resolve,50));reply.raw.destroy();}return payload;});
 app.get<{Querystring:{workflow?:string}}>('/__test_login',async(req,reply)=>{const result=await app.inject({method:'POST',url:'/api/login',headers:{origin:c.origin},payload:{login:'admin',password:c.password}});reply.header('Set-Cookie',result.headers['set-cookie']!);return reply.redirect(req.query.workflow==='1'?'/__test_users':req.query.workflow==='b1'?'/__test_b1':'/');});
@@ -25,6 +26,7 @@ app.get('/__test_users.js',async(_req,reply)=>reply.type('text/javascript').send
 app.get('/__test_composer.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-composer.js','utf8')));
 if(folders&&mail){
  app.get('/__test_folders.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-folders.js','utf8')));
+ app.get('/__test_folder_context.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-folder-context.js','utf8')));
  app.post('/__test_folder_fault',async()=>{mail.behavior.append='reject';return {armed:true};});
 }
 app.get('/__test_b1',async(_req,reply)=>reply.type('text/html').send(readFileSync(join(c.staticRoot,'index.html'),'utf8').replace('</body>','<script type="module" src="/__test_b1.js"></script></body>')));

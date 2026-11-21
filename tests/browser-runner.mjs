@@ -1,10 +1,11 @@
-// Usage: node tests/browser-runner.mjs /absolute/path/to/chrome
+// Usage: node tests/browser-runner.mjs /absolute/path/to/chrome [context]
 // Fresh loopback-only harness per workflow/viewport; no production credentials.
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {mkdir,mkdtemp,readFile,rm} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 const chrome=process.argv[2];if(!chrome)throw Error('Pass an absolute Chrome/Chromium path');
+const workflows=process.argv[3]==='context'?['context']:['folders','context','composer','b1','users'];
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 await mkdir('.test-data',{recursive:true,mode:0o700});
 const profile=await mkdtemp(resolve('.test-data/browser-chrome-'));
@@ -16,9 +17,9 @@ browser.stdout.resume();const results=[];
 try{
  const port=(await poll(()=>readFile(join(profile,'DevToolsActivePort'),'utf8'))).split('\n')[0],endpoint=`http://127.0.0.1:${port}`;
  const {Browser}=await (await fetch(endpoint+'/json/version')).json();
- for(const mobile of [false,true])for(const kind of ['folders','composer','b1','users']){
+ for(const mobile of [false,true])for(const kind of workflows){
   const record={kind,mobile};results.push(record);
-  const h=start(process.execPath,['tests/browser-harness.ts',...(['folders','composer'].includes(kind)?[`--${kind}`]:[])]);
+  const h=start(process.execPath,['tests/browser-harness.ts',...(kind==='context'?['--folders','--context']:['folders','composer'].includes(kind)?[`--${kind}`]:[])]);
   let origin,tab,ws;h.stdout.on('data',chunk=>{origin=/BROWSER_HARNESS (http:\/\/127\.0\.0\.1:\d+)/.exec(String(chunk))?.[1]??origin;});
   try{
    await poll(()=>origin);tab=await (await fetch(endpoint+'/json/new?about:blank',{method:'PUT'})).json();
@@ -40,6 +41,7 @@ try{
    await poll(()=>evaluate(`location.origin===${JSON.stringify(origin)} && !!document.querySelector('main')`));
    record.viewport=await evaluate('[innerWidth,innerHeight]');
    if(kind==='users'||kind==='b1')record.result=await poll(()=>evaluate(kind==='users'?'window.multiuserBrowserResult':'window.b1Results'));
+   else if(kind==='context')record.result=await evaluate("import('/__test_folder_context.js').then(m=>m.runContext())",true);
    else record.result=await evaluate(`import('/__test_${kind}.js').then(m=>m.run${kind==='folders'?'Folders':'Composer'}())`,true);
    record.passed=Array.isArray(record.result)?record.result.every(r=>r.passed):record.result?.passed===true;
   }catch(error){record.error=error.message;record.passed=false;}

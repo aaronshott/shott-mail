@@ -127,6 +127,7 @@ export async function startMailFixture(dir:string,folders=false){
  const imapPort=await listen(imap),smtpPort=await listen(smtp);
  return {ca,allowedMail:[`127.0.0.1:${imapPort}`,`127.0.0.1:${smtpPort}`],metrics:()=>({deliveries,imapAuth,smtpAuth}),
   behavior,submitted,appended,appendCount:()=>appendAttempts,releaseProvider:()=>{for(const {mail,raw} of delayed.splice(0))mail.push(raw);},
+  seedSent:()=>paths.get('work@example.test')!.get(sent)!.push('From: work@example.test\r\nSubject: QA17 Sent row\r\n\r\nSent context only\r\n'),
   mailbox:(name:string)=>{const user=`${name}@example.test`,password=passwords.get(user);if(!password)throw new Error('Invalid fixture mailbox');
    const ep={host:'127.0.0.1',tls:'implicit' as const,user,password};return {label:name,address:user,imap:{...ep,port:imapPort},smtp:{...ep,port:smtpPort}};},
   close:async()=>{for(const socket of sockets)socket.destroy();await Promise.all([new Promise<void>(r=>imap.close(()=>r())),new Promise<void>(r=>smtp.close(()=>r()))]);}};

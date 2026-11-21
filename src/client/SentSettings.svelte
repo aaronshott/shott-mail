@@ -1,17 +1,25 @@
 <script>
+ import {onDestroy} from 'svelte';
  export let account;
  export let api;
  export let action;
  export let busy;
- export let onSaved;
+ export let onSave;
  let folders=[],policy='provider',selection='';
- $: reset(account);
- function reset(a){folders=[];policy=a.sent?.policy??'provider';selection=a.sent?.folder??'';}
- async function load(){await action(async()=>{folders=await api(`/api/accounts/${account.id}/folders`);});}
- async function save(){await action(async()=>{
-  const {sent}=await api(`/api/accounts/${account.id}/sent`,'PUT',{policy,...(selection?{folder:selection}:{})});
-  onSaved(sent);
+ let savedPolicy,savedSelection;
+ $: reset(account.sent?.policy??'provider',account.sent?.folder??'');
+ function reset(nextPolicy,nextSelection){
+  if(nextPolicy===savedPolicy&&nextSelection===savedSelection)return;
+  savedPolicy=nextPolicy;savedSelection=nextSelection;
+  folders=[];policy=nextPolicy;selection=nextSelection;
+ }
+ let mounted=true;
+ onDestroy(()=>mounted=false);
+ async function load(){await action(async()=>{
+  try{const loaded=await api(`/api/accounts/${account.id}/folders`);if(mounted)folders=loaded;}
+  catch(e){if(mounted)throw e;}
  });}
+ function save(){return onSave(account.id,{policy,...(selection?{folder:selection}:{})});}
 </script>
 <section class="sent-settings">
  <h2>Kopie in Verzonden</h2>
