@@ -45,23 +45,23 @@ export async function runContext(){
   return {collision:{uid,validity},faults,normalSentAndInbox:true};
  });
  await run('QA17-02: a late policy save is applied to its request account only',async()=>{
-  press('Accounts');await pause(0);press('Werk');await pause(0);set(policy(),'client');await pause(0);
+  press('Accounts');await pause(0);press('Werk');await pause(0);set(policy(),'provider');await pause(0);
   await hold((url,init)=>url===`/api/accounts/${work.id}/sent`&&init.method==='PUT',async reached=>{
    press('Verzonden-instellingen opslaan');assert(await reached()===200,'Policy PUT failed');
    press('Privé');await pause(0);set(document.querySelector('main form input[maxlength="80"]'),'Privé unsaved');
   });
   const stored=await json('/api/accounts');
-  assert(stored.find(a=>a.id===work.id).sent?.policy==='client'&&!stored.find(a=>a.id===priv.id).sent,'Unexpected server-side policy');
-  assert(policy().value==='provider',`Privé UI shows ${policy().value} despite provider default`);
+  assert(stored.find(a=>a.id===work.id).sent?.policy==='provider'&&!stored.find(a=>a.id===priv.id).sent,'Unexpected server-side policy');
+  assert(policy().value==='client',`Privé UI shows ${policy().value} despite client default`);
   assert(document.querySelector('main form input[maxlength="80"]').value==='Privé unsaved','Unrelated form edit overwritten');
-  press('Werk');await pause(0);assert(policy().value==='client','Saved Werk policy missing after revisit');
-  return {work:'client',private:'provider',privateEditPreserved:true};
+  press('Werk');await pause(0);assert(policy().value==='provider','Saved Werk policy missing after revisit');
+  return {work:'provider',private:'client',privateEditPreserved:true};
  });
  await run('Failed policy save keeps the current selection and saves nothing',async()=>{
-  press('Accounts');await pause(0);press('Privé');await pause(0);set(policy(),'client');await pause(0);
+  press('Accounts');await pause(0);press('Privé');await pause(0);set(policy(),'provider');await pause(0);
   window.fetch=(url,...args)=>String(url)===`/api/accounts/${priv.id}/sent`?Promise.resolve(Response.json({error:'TRY_LATER'},{status:429})):native(url,...args);
   press('Verzonden-instellingen opslaan');await idle();
-  assert(policy().value==='client'&&document.querySelector('[role=alert]')?.textContent.includes('Te veel pogingen'),'Failed save lost input or error');
+  assert(policy().value==='provider'&&document.querySelector('[role=alert]')?.textContent.includes('Te veel pogingen'),'Failed save lost input or error');
   assert(!(await json('/api/accounts')).find(a=>a.id===priv.id).sent,'Failed save changed persistent policy');
  });
  await run('A late folder load cannot replace the composer or lose new text',async()=>{
