@@ -28,9 +28,51 @@
   finally{newPassword='';}
  });}
  function newDraft(reply){editor={id:crypto.randomUUID(),accountId:reply?.accountId||(filter==='all'?'':filter),revision:0,to:reply?.replyTo||'',subject:reply?'Re: '+reply.subject:'',text:reply?'\n\n'+reply.text:'',operation:null};dirty=true;view='compose';reader=null;notice='Nog niet opgeslagen. Sluiten/herladen kan invoer verliezen.';}
- async function save(){const r=await api(`/api/drafts/${editor.id}`,'PUT',{accountId:editor.accountId,revision:editor.revision,to:editor.to,subject:editor.subject,text:editor.text});editor={...editor,revision:r.revision};dirty=false;notice='Opgeslagen op Shott Mail, niet gesynchroniseerd naar IMAP Drafts.';}
- async function send(){await action(async()=>{if(editor.operation)return;await save();editor={...editor,operation:{state:'preparing'}};notice='Verzending wordt aangeboden; niet opnieuw versturen.';try{const op=await api(`/api/drafts/${editor.id}/send`,'POST',{revision:editor.revision});editor={...editor,operation:op};notice=status(op);}catch(e){editor={...editor,operation:{state:'outcome_unknown'}};notice=status(editor.operation);throw e;}});}
- async function checkSend(){await action(async()=>{const d=await api(`/api/drafts/${editor.id}`);editor={...editor,operation:d.operation};notice=d.operation?status(d.operation):'Geen verzendoperatie geregistreerd; concept behouden.';});}
+ async function save(){
+  const draft=editor;
+  const r=await api(`/api/drafts/${draft.id}`,'PUT',{accountId:draft.accountId,revision:draft.revision,to:draft.to,subject:draft.subject,text:draft.text});
+  if(editor!==draft)return null;
+  editor={...draft,revision:r.revision};dirty=false;notice='Opgeslagen op Shott Mail, niet gesynchroniseerd naar IMAP Drafts.';return editor;
+ }
+ const acceptedNotice='SMTP-server heeft het bericht geaccepteerd.';
+ function isSendResult(draft,op){return op?.id===draft.id&&!!status(op);}
+ async function applySendResult(draft,op){
+  // The editor instance is the request's local identity, even if the same draft is reopened.
+  if(editor!==draft)return;
+  if(op.state!=='accepted'){editor={...draft,operation:op};notice=status(op);return;}
+  editor=null;dirty=false;notice=acceptedNotice;
+  if(view!=='compose')return;
+  reader=null;view='inbox';
+  await tick();document.getElementById('inboxtitle')?.focus();
+  await refresh();
+ }
+ async function send(){await action(async()=>{
+  if(!editor||editor.operation)return;
+  const saved=await save();if(!saved||editor!==saved)return;
+  const pending={...saved,operation:{id:saved.id,state:'preparing'}};
+  editor=pending;notice='Verzending wordt aangeboden; niet opnieuw versturen.';
+  let op;
+  try{
+   op=await api(`/api/drafts/${pending.id}/send`,'POST',{revision:pending.revision});
+   if(!isSendResult(pending,op))throw new Error('Geen geldige verzendstatus ontvangen.');
+  }catch(e){
+   if(editor!==pending)return;
+   editor={...pending,operation:{id:pending.id,state:'outcome_unknown'}};notice=status(editor.operation);throw e;
+  }
+  await applySendResult(pending,op);
+ });}
+ async function checkSend(){await action(async()=>{
+  const draft=editor;if(!draft?.operation)return;
+  let d;
+  try{d=await api(`/api/drafts/${draft.id}`);}
+  catch(e){if(editor===draft)throw e;return;}
+  if(editor!==draft)return;
+  if(d?.id!==draft.id||d.revision!==draft.revision||!isSendResult(draft,d.operation)){
+   // No matching receipt is not proof that the previous POST did not send.
+   notice='Geen bevestigde verzendstatus. Concept behouden; niet opnieuw versturen.';return;
+  }
+  await applySendResult(draft,d.operation);
+ });}
  function status(op){return ({preparing:'Voorbereiding loopt. Controleer status; niet opnieuw verzenden.',submitting:'Verzending loopt. Niet opnieuw verzenden.',accepted:'SMTP-server heeft geaccepteerd; dit bewijst geen aflevering. Tekst lokaal bewaard; geen IMAP Sent-kopie gemaakt.',partial_recipients:'Gedeeltelijk geaccepteerd. Niet opnieuw naar iedereen versturen.',outcome_unknown:'Uitkomst onbekend: mogelijk al verzonden. Controleer bij ontvanger/provider; ontbreken van een Sent-kopie bewijst niets. Niet blind opnieuw versturen.',failed_before_submit:'Niet aangeboden: verbinding/TLS/auth/configuratie faalde. Tekst behouden. Deze operatie blijft geblokkeerd; maak pas na controle bewust een nieuw bericht.'})[op?.state]||'';}
  async function openMail(m){await action(async()=>{reader=await api(`/api/messages/${m.accountId}/${m.validity}/${m.uid}`);await tick();document.getElementById('readtitle')?.focus();});}
  function editAccount(a){settings=a?structuredClone(a):{label:'',address:'',imap:emptyEndpoint(993),smtp:emptyEndpoint(465)};settings.imap.password='';settings.smtp.password='';view='accounts';notice='';}
@@ -45,10 +87,10 @@
  <main class="login"><h1>Een rustige plek voor je mail.</h1><p>Meld aan met je eigen Shott Mail-account. Nog geen account? Vraag je beheerder.</p><form onsubmit={e=>{e.preventDefault();login();}}><label>Loginnaam<input autocomplete="username" bind:value={loginName} maxlength="64" required/></label><label>Wachtwoord<input type="password" autocomplete="current-password" bind:value={password} maxlength="1024" required/></label><button class="primary" disabled={busy}>Aanmelden</button></form>{#if editor}<p>Je actieve concept blijft alleen beschikbaar als je opnieuw aanmeldt als dezelfde gebruiker. Niet herladen.</p>{/if}</main>
 {:else}
  <div class="shell" class:reading={!!reader}>
-  <aside><div class="eyebrow">JOUW MAILBOXEN</div><label>Account<select bind:value={filter} onchange={()=>action(async()=>{reader=null;page=0;view='inbox';await refresh();})}><option value="all">Alle accounts</option>{#each accounts as a}<option value={a.id}>{a.label} · {a.address}</option>{/each}</select></label><button class="primary" onclick={()=>newDraft(null)} disabled={!!editor&&dirty}>+ Nieuw bericht</button><nav><button onclick={()=>action(async()=>{reader=null;view='inbox';await refresh();})}>Inbox</button><button onclick={()=>action(async()=>{reader=null;view='drafts';await refresh();})}>Concepten / verzendstatus</button><button onclick={()=>{reader=null;view='accounts';}}>Accounts</button>{#if role==='admin'}<button onclick={openUsers}>Gebruikers</button>{/if}{#if editor}<button onclick={()=>view='compose'}>Actief concept hervatten</button>{/if}</nav><p class="motto">Een rustige plek<br/>voor al je mail.</p></aside>
+  <aside><div class="eyebrow">JOUW MAILBOXEN</div><label>Account<select bind:value={filter} disabled={busy} onchange={()=>action(async()=>{reader=null;page=0;view='inbox';await refresh();})}><option value="all">Alle accounts</option>{#each accounts as a}<option value={a.id}>{a.label} · {a.address}</option>{/each}</select></label><button class="primary" onclick={()=>newDraft(null)} disabled={!!editor&&dirty}>+ Nieuw bericht</button><nav><button onclick={()=>action(async()=>{reader=null;view='inbox';await refresh();})}>Inbox</button><button onclick={()=>action(async()=>{reader=null;view='drafts';await refresh();})}>Concepten / verzendstatus</button><button onclick={()=>{reader=null;view='accounts';}}>Accounts</button>{#if role==='admin'}<button onclick={openUsers}>Gebruikers</button>{/if}{#if editor}<button onclick={()=>view='compose'}>Actief concept hervatten</button>{/if}</nav><p class="motto">Een rustige plek<br/>voor al je mail.</p></aside>
   <main class="workspace">
   {#if view==='inbox'}
-   <section class="list"><div class="listhead"><div class="eyebrow">JE OVERZICHT</div><h1>Inbox</h1><button onclick={()=>action(refresh)} disabled={busy}>Vernieuwen</button><p>Pagina {page+1} per account · nieuwste eerst</p></div>{#each messages as m}<button class="mail" onclick={()=>openMail(m)}><span>{m.unread?'● ':''}{m.from}</span><strong>{m.subject}</strong><span class="tag">{m.accountLabel} · {m.address}</span></button>{/each}{#if !messages.length}<p class="empty">Geen berichten geladen.{accounts.length?'':' Voeg eerst een account toe.'}</p>{/if}<div class="actions"><button disabled={page===0||busy} onclick={()=>action(async()=>{page--;await refresh();})}>Nieuwere</button><button disabled={!hasMore||busy} onclick={()=>action(async()=>{page++;await refresh();})}>Oudere</button></div></section>
+   <section class="list"><div class="listhead"><div class="eyebrow">JE OVERZICHT</div><h1 id="inboxtitle" tabindex="-1">Inbox</h1><div role="status">{#if notice===acceptedNotice}<p>{notice}</p>{/if}</div><button onclick={()=>action(refresh)} disabled={busy}>Vernieuwen</button><p>Pagina {page+1} per account · nieuwste eerst</p></div>{#each messages as m}<button class="mail" onclick={()=>openMail(m)}><span>{m.unread?'● ':''}{m.from}</span><strong>{m.subject}</strong><span class="tag">{m.accountLabel} · {m.address}</span></button>{/each}{#if !messages.length}<p class="empty">Geen berichten geladen.{accounts.length?'':' Voeg eerst een account toe.'}</p>{/if}<div class="actions"><button disabled={page===0||busy} onclick={()=>action(async()=>{page--;await refresh();})}>Nieuwere</button><button disabled={!hasMore||busy} onclick={()=>action(async()=>{page++;await refresh();})}>Oudere</button></div></section>
    <section class="reader">{#if reader}<button onclick={()=>reader=null}>← Terug naar lijst</button><span class="tag">{reader.accountLabel} · {reader.address}</span><h2 id="readtitle" tabindex="-1">{reader.subject}</h2><p>{reader.from}</p><p class="note">Veilige weergave: externe afbeeldingen, links en actieve inhoud zijn uitgeschakeld.</p>{#if reader.html}<iframe title="Veilige berichtinhoud" sandbox="" srcdoc={'<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src &#39;none&#39;; form-action &#39;none&#39;; base-uri &#39;none&#39;"><meta charset="utf-8">'+reader.html}></iframe><details><summary>Tekstweergave</summary><pre>{reader.text}</pre></details>{:else}<pre>{reader.text}</pre>{/if}{#if reader.attachments.length}<p>Bijlagen aanwezig; downloaden volgt na B1.</p>{/if}<button class="primary" onclick={()=>newDraft(reader)} disabled={!!editor&&dirty}>Beantwoorden</button>{:else}<p class="empty">Selecteer een bericht.</p>{/if}</section>
   {:else if view==='compose' && editor}
    <section class="panel"><h1>Bericht opstellen</h1><p class="note">Tekstbericht, één ontvanger. Bewaren gebeurt op Shott Mail. Geen automatische verzending of offline-opslag.</p><form onsubmit={e=>{e.preventDefault();send();}} oninput={()=>dirty=true}><fieldset disabled={!!editor.operation||busy}><label>Van<select bind:value={editor.accountId} required disabled={editor.revision>0}><option value="">Kies bewust een afzender</option>{#each accounts as a}<option value={a.id}>{a.label} · {a.address}</option>{/each}</select></label><label>Aan<input type="email" bind:value={editor.to} required/></label><label>Onderwerp<input bind:value={editor.subject} maxlength="998"/></label><label>Bericht<textarea bind:value={editor.text} maxlength={maxDraftChars}></textarea></label><div class="actions"><button type="submit" class="primary">Verzenden</button><button type="button" onclick={()=>action(save)}>Concept bewaren</button></div></fieldset></form>{#if editor.operation}<p class="note" role="status">{status(editor.operation)}</p><button onclick={checkSend} disabled={busy}>Verzendstatus controleren</button>{/if}</section>
@@ -62,5 +104,5 @@
   </main>
  </div>
 {/if}
-<div class="feedback" aria-live="polite">{#if error}<p role="alert" class="error">{error}</p>{/if}{#if notice}<p>{notice}</p>{/if}</div>
+<div class="feedback" aria-live="polite">{#if error}<p role="alert" class="error">{error}</p>{/if}{#if notice&&(view!=='inbox'||notice!==acceptedNotice)}<p>{notice}</p>{/if}</div>
 <footer>Shott Mail · Geen garantie · <a href="/LICENSE">AGPL-licentie</a> · <a href="https://github.com/aaronshott/shott-mail/tree/feat/mailclient-10-multiuser" target="_blank" rel="noreferrer noopener">Broncode</a> · Snooze en PWA-installatie volgen in v1.</footer>
