@@ -1,4 +1,4 @@
-# Shott Mail — multi-user mailclient (MAILCLIENT-12)
+# Shott Mail — multi-user mailclient
 
 Echte TypeScript/Fastify/SQLite-backend en Svelte-interface; geen RAM-demo.
 Dit is nog GEEN geaccepteerde B1 of productieversie. Lokale build, tests en
@@ -20,11 +20,39 @@ mailaflevering zijn ook getest met de beperkte loopback-TLS-fixture in `npm test
 acceptatie tegen Dovecot/Postfix blijft een aparte stap. Ontbrekende serververbinding wordt
 zichtbaar als onvolledige inbox gemeld, niet als een geslaagde lege mailbox.
 
-B1-grenzen: INBOX, tekstmail naar één ontvanger, handmatig vernieuwen en bewaren.
-Geen bijlagedownload/upload, IMAP Drafts/Sent-synchronisatie, autosave, CC/BCC,
+B1-grenzen: tekstmail naar één ontvanger, handmatig vernieuwen en bewaren.
+Geen bijlagedownload/upload, IMAP Drafts-sync, autosave, CC/BCC,
 zoekfunctie, herstelworkflow voor verzending, wachtwoordwijzigings-UI,
 mailboxbeheer of productiehardening. Bijlagen worden alleen genoemd; geen
 schijnknoppen. Snooze en installeerbare PWA blijven verplicht voor v1, buiten B1.
+
+### IMAP-mappen en Verzonden
+
+- **Inbox** blijft het bestaande (gecombineerde of gefilterde) INBOX-overzicht.
+  Kies bij **IMAP-mappen** één account. Shott Mail gebruikt de door de IMAP-server
+  aangeboden mappenlijst, niet alleen abonnementen. Bovenliggende niet-selecteerbare
+  mappen zijn wegwijzers. Mappen worden alleen gelezen; paginanummers kunnen bij
+  gelijktijdige toevoeging/verwijdering verschuiven. Bij gewijzigde UIDVALIDITY:
+  vernieuw het mapoverzicht voordat je verder leest.
+- **Accounts → Kopie in Verzonden**: standaard leidt Shott Mail geen providergedrag
+  af en voegt niets toe. Kies **Shott Mail** alleen als je weet dat de provider geen
+  kopie bewaart. Automatische mapkeuze vereist precies één selecteerbare `\Sent` uit
+  de serverlijst; bij geen/meerdere kandidaten kies je zelf een map. Er worden geen
+  mappen aangemaakt en instellingen gelden alleen voor nieuwe verzendingen.
+- De applicatie gebruikt één MIME-buffer met één Message-ID voor SMTP en een
+  eventuele IMAP APPEND. Na bevestigde SMTP-acceptatie sluit de composer, ook als
+  de kopie faalt. Onder **Concepten / verzendstatus** kun je een onbevestigde kopie
+  controleren. De controle schrijft niets op IMAP. Een gezien Message-ID bewijst
+  geen unieke kopie; een ontbrekend resultaat sluit vertraging, herschrijven,
+  verplaatsen of zoekindexvertraging niet uit.
+- Na een onzekere APPEND wordt niet opnieuw opgeslagen, ook niet na een herstart.
+  Een verkeerd ingestelde providerpolicy kan een ontbrekende of dubbele kopie
+  opleveren. Er is geen historische backfill, automatische reparatie of garantie
+  op precies één kopie bij alle providers. Bij SMTP-onzekerheid: controleer de
+  provider of ontvanger vóór je bewust iets opnieuw verstuurt.
+
+Lokale browserregressies (desktop en mobiele emulatie, synthetische TLS-peers):
+`node tests/browser-runner.mjs /absoluut/pad/naar/chrome` na `npm run build`.
 
 ## Externe mailboxen en Portainer (pas na onafhankelijke review)
 
@@ -220,7 +248,7 @@ als bewijs; een scriptbestand of `compose config` is geen PASS.
 - Versturen: concept eerst persistent opslaan, operation-id vergrendelen, daarna
   netwerk. Een herhaalde POST voert niet opnieuw SMTP uit. Na DATA-fout/herstart
   wordt resultaat conservatief `outcome_unknown`. Nooit automatisch hersturen.
-  `accepted` betekent alleen SMTP-aanvaarding, geen aflevering. Geen IMAP Sent-copy.
+  `accepted` betekent alleen SMTP-aanvaarding, geen aflevering; de IMAP-kopiestatus staat apart.
   Bij onzeker resultaat provider/ontvanger controleren; afwezige Sent-copy bewijst
   niets. Fout/succes bewaart tekst; de oorspronkelijke operatie blijft vergrendeld.
 - Onopgeslagen invoer blijft alleen in de open tab; herladen/crash kan die verliezen.

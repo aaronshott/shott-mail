@@ -34,7 +34,9 @@ export class Store {
         this.db.exec('CREATE TABLE meta (id INTEGER PRIMARY KEY CHECK(id=1), check_value TEXT NOT NULL)');
         this.db.prepare('INSERT INTO meta VALUES (1,?)').run(this.seal('shott-mail-key-check-v1', 'installation'));
       }
-      this.db.exec("UPDATE send_operations SET state='outcome_unknown',result='{}' WHERE state IN ('preparing','submitting'); COMMIT;");
+      this.db.exec(`UPDATE send_operations SET state='outcome_unknown',result='{}' WHERE state IN ('preparing','submitting');
+        UPDATE send_operations SET result=json_set(result,'$.filing.status',CASE json_extract(result,'$.filing.status') WHEN 'appending' THEN 'uncertain' ELSE 'failed' END)
+        WHERE state='accepted' AND json_extract(result,'$.filing.status') IN ('pending','appending'); COMMIT;`);
     } catch (error) { this.close(); throw error; }
   }
 

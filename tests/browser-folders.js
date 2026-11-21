@@ -1,0 +1,51 @@
+// Browser integration through the built app and the synthetic TLS peer.
+export async function runFolders(){
+ const pause=ms=>new Promise(r=>setTimeout(r,ms));
+ const assert=(v,why)=>{if(!v)throw Error(why);};
+ const btn=text=>[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===text);
+ const click=text=>{const b=btn(text);assert(b&&!b.disabled,`Missing/disabled: ${text}`);b.click();};
+ const set=(el,value)=>{assert(el,'missing field');el.value=value;el.dispatchEvent(new Event(el.tagName==='SELECT'?'change':'input',{bubbles:true}));};
+ const idle=async()=>{await pause(20);for(let i=0;i<200;i++){if(btn('Uitloggen')&&!btn('Uitloggen').disabled)return;await pause(50);}throw Error('app remained busy');};
+ const checks=[];
+ await idle();
+ const accounts=await (await fetch('/api/accounts')).json();
+ const a=accounts.find(a=>a.address==='work@example.test');
+ const filt=()=>document.querySelector('aside select');
+ const heading=()=>document.querySelector('main h1')?.textContent.trim();
+ const report=()=>document.querySelector('main').textContent;
+ const metrics=async()=>await (await fetch('/__test_metrics')).json();
+ const layout=()=>assert(document.documentElement.scrollWidth<=innerWidth,`horizontal overflow at ${innerWidth}`);
+ assert(heading()==='Inbox'&&report().includes('Seed for work')&&report().includes('Seed for private'),'unified Inbox changed');
+ click('IMAP-mappen');await idle();assert(report().includes('Kies één account'),'missing account chooser');
+ set(filt(),a.id);await idle();layout();
+ assert(report().includes('Shared/<b>literal</b>')&&!document.querySelector('.folder-list b'),'markup in folder name parsed');
+ assert(!btn('INBOX/Projects · bovenliggende map')&&report().includes('INBOX/Projects · bovenliggende map'),'selectable parent');
+ click('INBOX/Projects/旅行 · niet geabonneerd');await idle();assert(heading()==='INBOX/Projects/旅行'&&report().includes('Nested 2'),'wrong folder');
+ click('Oudere');await idle();assert(report().includes('Nested 1')&&!report().includes('Nested 2'),'wrong page');
+ document.querySelector('.list .mail').click();await idle();
+ const iframe=document.querySelector('.reader iframe');
+ assert(iframe?.hasAttribute('sandbox')&&iframe.srcdoc.includes('Nested body 1')&&!iframe.srcdoc.includes('<script')&&!iframe.srcdoc.includes('https://example.test/no'),'incorrect UID read or unsafe HTML');layout();
+ click('← Terug naar lijst');click('Nieuwere');await idle();assert(report().includes('Nested 2'),'newer page missing');
+ checks.push('unified inbox; nested unsubscribed folder and navigation-only parent; pagination; sanitized read; layout');
+ click('Accounts');await idle();click('Werk');await idle();
+ click('Verzonden-mappen laden');await idle();
+ const settings=document.querySelector('.sent-settings'),select=settings.querySelectorAll('select');
+ assert(select[0].value==='provider','unsafe default policy');set(select[0],'client');
+ const option=[...select[1].options].find(o=>o.textContent.includes('Custom & Sent'));assert(option,'missing custom option');set(select[1],option.value);
+ click('Verzonden-instellingen opslaan');await idle();layout();
+ const metricsBefore=await metrics();
+ async function send(label){
+  click('Inbox');await idle();click('+ Nieuw bericht');await idle();
+  set(document.querySelector('input[type=email]'),'private@example.test');set(document.querySelector('input[maxlength="998"]'),label+' '+crypto.randomUUID());set(document.querySelector('textarea'),'synthetic Sent body');
+  await pause(0);click('Verzenden');await idle();
+  assert(heading()==='Inbox'&&!document.querySelector('textarea')&&report().includes('SMTP-server heeft het bericht geaccepteerd.'),'accepted composer stayed open');
+ }
+ await send('browser success');assert(report().includes('Kopie door IMAP geaccepteerd'),'missing successful copy state');
+ click('IMAP-mappen');await idle();click('Shared/Custom & Sent · niet geabonneerd');await idle();assert(report().includes('browser success'),'copy not filed in explicit custom folder');
+ checks.push('settings default provider; explicit client and custom folder; copy displayed; composer closed');
+ assert((await fetch('/__test_folder_fault',{method:'POST'})).ok,'fixture fault setup');
+ await send('browser failure');assert(report().includes('Verzonden-kopie niet opgeslagen'),'filing failure not distinguished');
+ const after=await metrics();assert(after.deliveries-metricsBefore.deliveries===2&&after.sendRequests-metricsBefore.sendRequests===2,'unexpected SMTP/POST count');
+ checks.push('SMTP acceptance closes composer even on tagged APPEND rejection; one request and submission each');
+ return {passed:true,viewport:[innerWidth,innerHeight],checks};
+}

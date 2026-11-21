@@ -3,8 +3,9 @@
 import {mkdtempSync,mkdirSync,readFileSync,rmSync} from 'node:fs';import {resolve,join} from 'node:path';import {randomBytes,randomUUID} from 'node:crypto';import {buildApp} from '../src/server/app.ts';import {Store} from '../src/server/store.ts';
 import {startMailFixture} from './mail-fixture.ts';
 mkdirSync('.test-data',{recursive:true,mode:0o700});const dir=mkdtempSync(resolve('.test-data/browser-'));
-const mail=process.argv.includes('--composer')?await startMailFixture(dir):null;
-const c={dbPath:join(dir,'app.sqlite'),key:randomBytes(32),password:randomBytes(24).toString('base64url'),origin:'http://127.0.0.1',secureCookie:false,allowedMail:mail?.allowedMail??[],sessionMs:3600000,staticRoot:resolve('dist/client'),...(mail?{mailMode:'fixture' as const,ca:mail.ca,timeoutMs:3000}:{})};
+const folders=process.argv.includes('--folders');
+const mail=folders||process.argv.includes('--composer')?await startMailFixture(dir,folders):null;
+const c={dbPath:join(dir,'app.sqlite'),key:randomBytes(32),password:randomBytes(24).toString('base64url'),origin:'http://127.0.0.1',secureCookie:false,allowedMail:mail?.allowedMail??[],sessionMs:3600000,staticRoot:resolve('dist/client'),...(mail?{mailMode:'fixture' as const,ca:mail.ca,timeoutMs:3000}:{}),...(folders?{pageSize:1}:{})};
 const store=new Store(c.dbPath,c.key,c.password);
 for(const label of ['Werk','Privé']){
  const user=label==='Werk'?'work':'private';
@@ -22,6 +23,10 @@ app.get<{Querystring:{workflow?:string}}>('/__test_login',async(req,reply)=>{con
 app.get('/__test_users',async(_req,reply)=>reply.type('text/html').send(readFileSync(join(c.staticRoot,'index.html'),'utf8').replace('</body>','<script type="module" src="/__test_users.js"></script></body>')));
 app.get('/__test_users.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-users.js','utf8')));
 app.get('/__test_composer.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-composer.js','utf8')));
+if(folders&&mail){
+ app.get('/__test_folders.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-folders.js','utf8')));
+ app.post('/__test_folder_fault',async()=>{mail.behavior.append='reject';return {armed:true};});
+}
 app.get('/__test_b1',async(_req,reply)=>reply.type('text/html').send(readFileSync(join(c.staticRoot,'index.html'),'utf8').replace('</body>','<script type="module" src="/__test_b1.js"></script></body>')));
 app.get('/__test_b1.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-regressions.js','utf8')+`
 async function run(){

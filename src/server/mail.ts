@@ -3,6 +3,14 @@ import nodemailer from 'nodemailer';
 import sanitize from 'sanitize-html';
 import {endpointOptions,type Endpoint,type MailPolicy,type Protocol} from './mail-policy.ts';
 export type {Endpoint,MailPolicy} from './mail-policy.ts';
+export async function composeRaw(message:{from:string;to:string;subject:string;text:string;messageId:string}):Promise<Buffer>{
+ const transport=nodemailer.createTransport({streamTransport:true,buffer:true,newline:'windows',disableFileAccess:true,disableUrlAccess:true});
+ try{
+  const raw=(await transport.sendMail(message)).message;
+  if(!Buffer.isBuffer(raw))throw new Error('EXPECTED_MIME_BUFFER');
+  return raw;
+ }finally{transport.close();}
+}
 export function safeHtml(html:string):string{return sanitize(html,{allowedTags:['p','br','b','strong','em','i','u','ul','ol','li','blockquote','pre','code','h1','h2','h3','table','tr','td','th','tbody','div','span'],allowedAttributes:{},allowedSchemes:[],allowProtocolRelative:false});}
 export async function imap(e:Endpoint,c:MailPolicy){
  const opts=await endpointOptions('imap',e,c);
