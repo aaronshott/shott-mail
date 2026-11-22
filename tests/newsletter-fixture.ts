@@ -32,6 +32,21 @@ export function missingImage(origin:string){
  return headers('Reader missing')+`Content-Type: text/html; charset=utf-8\r\n\r\n<h1>Monthly notice</h1><img src="${origin}/missing.png" alt="Archive illustration">\r\n`;
 }
 
+export function diagnostics(origin:string){
+ const relative='<img src="/private-fixture-token.png">'.repeat(13);
+ const variants=Array.from({length:9},(_,i)=>`${origin}/private-fixture-token.png ${i+1}w`).join(', ');
+ return headers('Reader diagnostics')+`Content-Type: text/html; charset=utf-8\r\n\r\n<h1>Source diagnostics</h1>${relative}
+ <img ignored-private-fixture-token="x"><img data-original="${origin}/private-fixture-token.png">
+ <img src="ftp://private-fixture-token.example.test/image.png"><img src="data:image/png;base64,${logo}">
+ <img src="https://private-fixture-token.internal/image.png"><img src="${origin}/private-fixture-token${'x'.repeat(2050)}">
+ <img src="https://[bad-private-fixture-token]/"><img src="https://private-fixture-token@images.example.test/image.png">
+ <img srcset="${origin}/private-fixture-token.png 0x"><img srcset="${variants}">
+ <img src="cid:private-fixture-token" data-src="${origin}/private-fixture-token.png">
+ <img src="/private-fixture-token.png" data-src="${origin}/diagnostics.png?one=1&amp;two=2" alt="Eligible fixture">
+ ${`<img src="${origin}/diagnostics.png?one=1&amp;two=2">`.repeat(48)}
+ <template><img src="/private-fixture-token.png"></template><mail-image data-reason="limit"></mail-image>\r\n`;
+}
+
 export function contrastFixtures(){
  const html=(name:string,body:string)=>headers(`Reader ${name}`)+`Content-Type: text/html; charset=utf-8\r\n\r\n${body}\r\n`;
  return [html('contrast','<h1>Plain heading</h1><p><span style="color:white;background-color:transparent">White text from a dark-mode design</span></p>'+

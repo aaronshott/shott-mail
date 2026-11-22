@@ -1,5 +1,5 @@
 import sanitize from 'sanitize-html';
-import {boundedInteger,formattingTags,maxReaderImages,newsletterImageURL,srcsetFallback,tableWidth} from '../reader-policy.ts';
+import {boundedInteger,formattingTags,imageRejections,maxReaderImages,selectImageSource,tableWidth,type ImageRejectionCounts} from '../reader-policy.ts';
 import {cellPadding,presentationAttributes,presentationHints} from '../reader-presentation.ts';
 
 const marker='mail-image'; // only used in a detached HTML template, never inserted in the page
@@ -12,10 +12,11 @@ const cell:sanitize.Transformer=(tagName,attrs)=>{
  return {tagName,attribs};
 };
 
-export function formatBody(html:string,appHostname=''):{markup:string;images:string[]}|null {
+export function formatBody(html:string,appHostname=''):{markup:string;images:string[];imageRejections?:ImageRejectionCounts}|null {
  try{
   let count=0,depth=0,slots=0;
   const images:string[]=[];
+  const rejected:ImageRejectionCounts={};
   const markup=sanitize(html,{
    allowedTags:[...formattingTags,marker],allowedAttributes:{'*':presentationAttributes,[marker]:['data-index','data-reason','data-image-width','data-image-height'],table:['data-layout','data-width','data-align','data-cell-padding'],td:['colspan','rowspan'],th:['colspan','rowspan']},allowedSchemes:[],allowProtocolRelative:false,
    nonTextTags:discard,
@@ -36,15 +37,16 @@ export function formatBody(html:string,appHostname=''):{markup:string;images:str
     },
     td:cell,th:cell,
     img:(_tag,attrs):sanitize.Tag=>{
-     const src=(attrs.src??'').trim();
-     const inline=/^cid:/i.test(src);
-     const url=inline?null:newsletterImageURL(src,appHostname)??newsletterImageURL(attrs['data-src'],appHostname)??srcsetFallback(attrs.srcset,appHostname);
+     const source=selectImageSource(attrs,appHostname);
+     const url='url' in source?source.url:null;
      const text=(attrs.alt??'').trim().slice(0,512);
      let index=url&&slots<maxReaderImages?images.indexOf(url):-1;
      if(url&&slots<maxReaderImages&&index<0&&images.length<maxReaderImages)index=images.push(url)-1;
      if(index>=0)slots++;
-     const reason=url?'limit':inline?'inline':'source';
-     const attribs:Record<string,string>=index>=0?{'data-index':String(index)}:{'data-reason':reason};
+     const reason='reason' in source?source.reason:'limit';
+     if(index<0)rejected[reason]=(rejected[reason]??0)+1;
+     const markerReason=reason==='cid'?'inline':reason==='limit'?'limit':'source';
+     const attribs:Record<string,string>=index>=0?{'data-index':String(index)}:{'data-reason':markerReason};
      const width=boundedInteger(attrs.width?.trim(),1200),height=boundedInteger(attrs.height?.trim(),800);
      if(index>=0&&width&&height){attribs['data-image-width']=width;attribs['data-image-height']=height;}
      return {tagName:marker,attribs,text};
@@ -52,6 +54,8 @@ export function formatBody(html:string,appHostname=''):{markup:string;images:str
    }
   });
   if(!markup.includes(`<${marker} `)&&!markup.replace(/<[^>]*>|&nbsp;/g,'').trim())return null;
-  return {markup,images};
+  const counts:ImageRejectionCounts={};
+  for(const reason of imageRejections)if(rejected[reason])counts[reason]=rejected[reason];
+  return {markup,images,...(Object.keys(counts).length?{imageRejections:counts}:{})};
  }catch{return null;}
 }

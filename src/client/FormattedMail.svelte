@@ -1,20 +1,26 @@
 <script>
  import {onMount,tick} from 'svelte';
- import {boundedInteger,formattingTags,imageURL,maxReaderImages,tableWidth} from '../reader-policy.ts';
+ import {boundedInteger,formattingTags,imageRejections,imageURL,maxReaderImages,tableWidth} from '../reader-policy.ts';
  import {applyPresentation,cellPadding} from '../reader-presentation.ts';
  import {imageFrameDocument} from '../image-frame.ts';
  import {protectReaderContrast} from './reader-contrast.ts';
 
  let {body,text,t}=$props();
  let target=$state(),status=$state(),available=$state(false),usable=$state(true),consented=$state(false);
- let unsupportedSources=$state(0),limited=$state(0),inline=$state(0);
+ let unsupportedSources=$state(0),limited=$state(0),inline=$state(0),rendererRejected=$state(0);
+ const reasons=imageRejections.filter(reason=>reason!=='cid'&&reason!=='limit');
+ const count=reason=>{
+  const value=body.imageRejections?.[reason];
+  return Number.isInteger(value)&&value>0&&value<=4000?value:0;
+ };
+ const sourceTotal=$derived(body.imageRejections?reasons.reduce((sum,reason)=>sum+count(reason),0):unsupportedSources);
  const placeholders=[];
 
  onMount(()=>{
   // Parse in a detached, inert template. Rebuild; never insert its nodes or copy attributes wholesale.
   const template=document.createElement('template');
   template.innerHTML=body.markup;
-  let unsupported=0,overBudget=0,embedded=0;
+  let unsupported=0,overBudget=0,embedded=0,rejectedAtRender=0;
   function copy(from,to,inheritedPadding=null){
    for(const node of from.childNodes){
     if(node.nodeType===Node.TEXT_NODE){to.append(document.createTextNode(node.data));continue;}
@@ -31,7 +37,7 @@
      if(atLimit)overBudget++;
      if(isInline)embedded++;
      if(generic){
-      unsupported++;
+      if(index!==null)rejectedAtRender++;else unsupported++;
       if(!alt.trim())continue;
      }
      const slot=document.createElement('span');slot.className='mail-image-placeholder';to.append(slot);
@@ -72,6 +78,7 @@
   unsupportedSources=unsupported;
   limited=overBudget;
   inline=embedded;
+  rendererRejected=rejectedAtRender;
   usable=!!target.textContent.trim();
   return protectReaderContrast(target);
  });
@@ -109,17 +116,22 @@
   <p role="status" tabindex="-1" bind:this={status}>{consented?t('imagesRequested'):''}</p>
  </div>
 {/if}
-{#if unsupportedSources||limited||inline}
+{#if sourceTotal||count('limit')||limited||count('cid')||inline||rendererRejected||consented}
  <details class="note image-source-summary">
   <summary>{t('imageDetails')}</summary>
   <ul>
-   {#if unsupportedSources}<li>{t(unsupportedSources===1?'imageSourceUnavailable':'imageSourcesUnavailable',{count:unsupportedSources})}</li>{/if}
-   {#if limited}<li>{t('imageLimitCount',{count:limited})}</li>{/if}
-   {#if inline}<li>{t('inlineImageCount',{count:inline})}</li>{/if}
+   {#if sourceTotal}<li>{t(sourceTotal===1?'imageSourceUnavailable':'imageSourcesUnavailable',{count:sourceTotal})}</li>{/if}
+   {#each reasons as reason}
+    {#if count(reason)}<li>{t(`imageReason.${reason}`,{count:count(reason)})}</li>{/if}
+   {/each}
+   {#if count('limit')||limited}<li>{t('imageLimitCount',{count:count('limit')||limited})}</li>{/if}
+   {#if count('cid')||inline}<li>{t('inlineImageCount',{count:count('cid')||inline})}</li>{/if}
+   {#if rendererRejected}<li>{t('imageRendererCount',{count:rendererRejected})}</li>{/if}
+   {#if consented}<li>{t('imageLoadFailureNote')}</li>{/if}
   </ul>
  </details>
 {/if}
 <div class="formatted-mail" bind:this={target} hidden={!usable}></div>
-{#if usable||unsupportedSources}
+{#if usable||sourceTotal||rendererRejected}
  {#if text.trim()}<details class="mail-text-view"><summary>{t('textView')}</summary><pre>{text}</pre></details>{/if}
 {:else}<p class="note">{t('htmlUnavailable')}</p>{#if text.trim()}<pre>{text}</pre>{/if}{/if}

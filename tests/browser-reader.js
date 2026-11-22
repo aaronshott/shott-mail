@@ -217,3 +217,43 @@ export async function gardenAfter(){
  const m=await fetch('/__test_metrics').then(r=>r.json());assert(!m.sendRequests&&!m.smtpAuth&&!m.deliveries&&!m.appendAttempts,'reading changed compose or Sent');
  return {passed:true,observed};
 }
+
+export async function diagnosticsBefore(lang){
+ await idle();click('Instellingen');await pause(0);
+ const prefs=document.querySelectorAll('main select');
+ set(prefs[0],lang);set(prefs[2],'html');await pause(0);click('Instellingen opslaan');await idle();click(lang==='en'?'Back':'Terug');
+ await open('diagnostics');
+ const details=reader().querySelector('details.image-source-summary');
+ assert(document.documentElement.lang===lang&&details&&!details.open,'wrong locale or diagnostics not collapsed');
+ const endpoint=performance.getEntriesByType('resource').findLast(e=>new URL(e.name).pathname.startsWith('/api/messages/'));
+ const response=await fetch(endpoint.name);assert(response.ok,'real inbox message API failed');
+ const {formatted}=await response.json();
+ const expected={missing:1,relative:13,unsupportedScheme:1,unsupportedAttribute:1,dataRaster:1,blockedHost:1,tooLong:1,malformed:1,credentials:1,srcsetSyntax:1,srcsetLimit:1,cid:1,limit:1};
+ assert(JSON.stringify(formatted.imageRejections)===JSON.stringify(expected)&&formatted.images.length===1&&!JSON.stringify(formatted).includes('private-fixture-token'),'unexpected API diagnostics or leak');
+ const hidden=[...details.querySelectorAll('li')].every(li=>!li.checkVisibility({contentVisibilityAuto:true}));
+ assert(hidden,'diagnostic rows visible while collapsed');
+ details.querySelector('summary').click();await pause(0);
+ const rows=[...details.querySelectorAll('li')].map(li=>li.textContent);
+ const labels=lang==='en'?['23 images have unsupported sources.','Missing source: 1','Relative source: 13','Unsupported URL scheme: 1','Unsupported source attribute: 1','Embedded raster source (data URL): 1','Host blocked by image policy: 1','Source too long: 1','Malformed source: 1','Credentials in URL not allowed: 1','Invalid or unsupported source variants: 1','Too many source variants: 1','Embedded and not displayed: 1']:['23 afbeeldingen hebben een niet-ondersteunde bron.','Bron ontbreekt: 1','Relatieve bron: 13','URL-schema niet ondersteund: 1','Bronattribuut niet ondersteund: 1','Ingesloten rasterbron (data-URL): 1','Host geblokkeerd door beeldbeleid: 1','Bron te lang: 1','Ongeldige bron: 1','Inloggegevens in URL niet toegestaan: 1','Bronvarianten ongeldig of niet ondersteund: 1','Te veel bronvarianten: 1','Ingesloten en niet weergegeven: 1'];
+ labels.splice(-1,0,lang==='en'?'Skipped due to display limit: 1':'Overgeslagen door weergavelimiet: 1');
+ assert(details.open&&JSON.stringify(rows)===JSON.stringify(labels),'wrong diagnostic rows');
+ reader().querySelector('.image-controls button').click();await pause(200);
+ assert((await requests()).length===0&&(await connections())===0&&!reader().querySelector('iframe,img'),'diagnostics or untrusted click contacted host');
+ return {rows,counts:formatted.imageRejections,closedByDefault:hidden,connections:0,requests:0};
+}
+
+export async function diagnosticsMissing(lang){
+ click(lang==='en'?'← Back to list':'← Terug naar lijst');await open('missing');
+ assert(!reader().querySelector('.image-source-summary,iframe,img'),'message diagnostics or consent carried over');
+ return gardenPoint();
+}
+
+export async function diagnosticsAfter(lang){
+ const observed=await requests();
+ assert(observed.length===1&&observed[0].path==='/missing.png'&&!observed[0].referer&&!observed[0].authorization,'unexpected load attempt');
+ const details=reader().querySelector('.image-source-summary');
+ const note=details?.querySelector('li')?.textContent;
+ assert(details&&!details.open&&details.querySelectorAll('li').length===1&&note.startsWith(lang==='en'?'Load failures after consent':'Laadfouten na toestemming'),'fetch failure conflated with rejected sources');
+ const m=await fetch('/__test_metrics').then(r=>r.json());assert(!m.sendRequests&&!m.smtpAuth&&!m.deliveries&&!m.appendAttempts,'diagnostics changed mail or sent a draft');
+ return {passed:true,note,observed};
+}

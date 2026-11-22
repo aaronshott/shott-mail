@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {parseMessage} from '../src/server/inbox.ts';
-import {newsletter,imageOnly,edition,editionImages,studio} from './newsletter-fixture.ts';
+import {newsletter,imageOnly,edition,editionImages,studio,diagnostics} from './newsletter-fixture.ts';
 import {formatBody} from '../src/server/format-body.ts';
 
 test('newsletter promotes protocol-relative src to HTTPS and uses eligible data-src as fallback',async()=>{
@@ -54,7 +54,35 @@ test('distinct destinations and repeated image slots are separately bounded',()=
   assert.equal(body.images.length,expected);
   assert.equal([...body.markup.matchAll(/data-index=/g)].length,48);
   assert.equal([...body.markup.matchAll(/data-reason="limit"/g)].length,4);
+  assert.deepEqual(body.imageRejections,{limit:4});
  }
+});
+
+test('raw MIME aggregates fixed reasons once per skipped img without classified values',async()=>{
+ const origin='https://images.example.test';
+ const {formatted}=await parseMessage(Buffer.from(diagnostics(origin)));
+ assert.deepEqual(formatted?.images,[origin+'/diagnostics.png?one=1&two=2']);
+ assert.deepEqual(Object.entries(formatted!.imageRejections!),Object.entries({missing:1,relative:13,unsupportedScheme:1,unsupportedAttribute:1,dataRaster:1,blockedHost:1,tooLong:1,malformed:1,credentials:1,srcsetSyntax:1,srcsetLimit:1,cid:1,limit:1}));
+ assert.doesNotMatch(JSON.stringify(formatted),/private-fixture-token|base64|data-original|ignored-/);
+});
+
+test('canonical URLs over the renderer cap do not exhaust slots for eligible URLs',async()=>{
+ const origin='https://images.example.test';
+ const tooLong=origin+'/'+'é'.repeat(350);
+ const raw=Buffer.from(`From: fixture@example.test\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=utf-8\r\n\r\n${`<img src="${tooLong}">\r\n`.repeat(48)}<img src="${origin}/eligible.png">`);
+ const {formatted}=await parseMessage(raw);
+ assert.equal(formatted?.images.length,1);
+ assert.ok(formatted?.images[0]===origin+'/eligible.png','oversize canonical URL displaced eligible source');
+ assert.match(formatted!.markup,/data-index="0"/);
+ assert.deepEqual(formatted!.imageRejections,{tooLong:48});
+});
+
+test('MIME transfer decoding preserves signed queries, eligible srcset and CID through the formatter',async()=>{
+ const raw=Buffer.from('From: fixture@example.test\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=utf-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n'+
+  '<img src=3D"//images.example.test/a?key=3Da%2Bb&amp;sig=3D=\r\n%2F">\r\n<img srcset=3D"http://images.example.test/b 2x, https://images.example.test/c 1x">\r\n<img src=3D"CID:private-fixture-token">\r\n');
+ const {formatted}=await parseMessage(raw);
+ assert.deepEqual(formatted?.images,['https://images.example.test/a?key=a%2Bb&sig=%2F','https://images.example.test/c']);
+ assert.deepEqual(formatted?.imageRejections,{cid:1});
 });
 
 test('presentation normalizes only closed grammar values and discards unsupported CSS and metadata',()=>{

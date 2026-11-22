@@ -7,7 +7,7 @@ import {join,resolve} from 'node:path';
 import {runTreeStyle} from './browser-tree-style.mjs';
 import {editionImages} from './newsletter-fixture.ts';
 const chrome=process.argv[2];if(!chrome)throw Error('Pass an absolute Chrome/Chromium path');
-const workflows=process.argv.length>3?process.argv.slice(3):['folders','context','composer','b1','users','settings','reply-nl','reply-en','reader-nl','reader-en','newsletter','edition','studio','contrast','tree-light','tree-dark'];
+const workflows=process.argv.length>3?process.argv.slice(3):['folders','context','composer','b1','users','settings','reply-nl','reply-en','reader-nl','reader-en','diagnostics-nl','diagnostics-en','newsletter','edition','studio','contrast','tree-light','tree-dark'];
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 await mkdir('.test-data',{recursive:true,mode:0o700});
 const profile=await mkdtemp(resolve('.test-data/browser-chrome-'));
@@ -23,9 +23,10 @@ try{
   const record={kind,mobile};results.push(record);
   const replyLocale=kind==='reply-nl'?'nl':kind==='reply-en'?'en':null;
   const readerLocale=kind==='reader-nl'?'nl':kind==='reader-en'?'en':null;
-  const studio=kind==='studio',edition=kind==='edition',garden=kind==='newsletter'||kind==='contrast'||edition||studio,needsImage=readerLocale||garden;
+  const diagnosticsLocale=kind==='diagnostics-nl'?'nl':kind==='diagnostics-en'?'en':null;
+  const studio=kind==='studio',edition=kind==='edition',garden=kind==='newsletter'||kind==='contrast'||edition||studio,needsImage=readerLocale||garden||diagnosticsLocale;
   const treeTheme=kind==='tree-light'?'light':kind==='tree-dark'?'dark':null;
-  const h=start(process.execPath,['tests/browser-harness.ts',...(garden?['--newsletter']:readerLocale?['--reader']:replyLocale?['--reply-subjects']:kind==='context'?['--folders','--context']:treeTheme?['--folders','--tree-style']:kind==='settings'?['--folders']:['folders','composer'].includes(kind)?[`--${kind}`]:[])]);
+  const h=start(process.execPath,['tests/browser-harness.ts',...(garden?['--newsletter']:diagnosticsLocale?['--reader','--diagnostics']:readerLocale?['--reader']:replyLocale?['--reply-subjects']:kind==='context'?['--folders','--context']:treeTheme?['--folders','--tree-style']:kind==='settings'?['--folders']:['folders','composer'].includes(kind)?[`--${kind}`]:[])]);
   let origin,imageOrigin,tab,ws,harnessOutput='';h.stdout.on('data',chunk=>{harnessOutput+=chunk;const match=/BROWSER_HARNESS (http:\/\/127\.0\.0\.1:\d+)(?: (https:\/\/images\.example\.test:\d+))?\r?\n/.exec(harnessOutput);if(match)[,origin,imageOrigin]=match;});
   try{
    await poll(()=>origin);tab=await (await fetch(endpoint+'/json/new?about:blank',{method:'PUT'})).json();
@@ -69,7 +70,7 @@ try{
    else if(treeTheme)record.result=await runTreeStyle({call,evaluate,poll,mobile,theme:treeTheme,baseline:process.env.FOLDER_TREE_BASELINE==='1',screenshots:process.env.FOLDER_TREE_SCREENSHOTS});
    else if(kind==='context')record.result=await evaluate("import('/__test_folder_context.js').then(m=>m.runContext())",true);
    else if(replyLocale)record.result=await evaluate(`import('/__test_reply_subjects.js').then(m=>m.runReplySubjects(${JSON.stringify(replyLocale)}))`,true);
-   else if(garden){
+   else if(garden||diagnosticsLocale){
     const baseline=process.env.NEWSLETTER_BASELINE==='1',dir=process.env.NEWSLETTER_SCREENSHOTS;
     const run=(method,arg='')=>evaluate(`import('/__test_reader.js').then(m=>m.${method}(${arg}))`,true);
     const shot=async (name,viewportOnly=false)=>{
@@ -84,7 +85,20 @@ try{
      if(mobile){await call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point]});await call('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});}
      else for(const type of ['mousePressed','mouseReleased'])await call('Input.dispatchMouseEvent',{type,...point,button:'left',clickCount:1});
     };
-    if(kind==='contrast'){
+    if(diagnosticsLocale){
+     const lang=JSON.stringify(diagnosticsLocale);
+     record.before=await run('diagnosticsBefore',lang);
+     if(observed.length)throw Error('CDP observed network before consent');
+     await shot(kind+'-expanded',true);
+     const point=await run('diagnosticsMissing',lang);
+     if(observed.length)throw Error('CDP observed network on message switch');
+     await gesture(point);
+     record.failedImage=await poll(async()=>{
+      const [session]=imageFrames.values();if(!session)return;
+      return evaluate(`(() => {const i=document.querySelector('img');return i?.complete&&!i.naturalWidth&&i.alt==='Archive illustration'?{nativeFallback:true}:null;})()`,false,session);
+     });
+     record.result=await run('diagnosticsAfter',lang);
+    }else if(kind==='contrast'){
      record.result=await run('contrastStart');
      await shot('contrast-light',true);
      record.result.dark=await run('contrastTheme',JSON.stringify('dark'));
