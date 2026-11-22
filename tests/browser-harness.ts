@@ -5,6 +5,7 @@ import {startMailFixture} from './mail-fixture.ts';
 import {createServer as createHttps} from 'node:https';
 import {once} from 'node:events';
 import {crc32,deflateSync} from 'node:zlib';
+import {newsletter,imageOnly,missingImage} from './newsletter-fixture.ts';
 
 function newsletterPng(){
  const width=640,height=120;
@@ -21,7 +22,8 @@ mkdirSync('.test-data',{recursive:true,mode:0o700});const dir=mkdtempSync(resolv
 const folders=process.argv.includes('--folders');
 const treeStyle=process.argv.includes('--tree-style');
 const replySubjects=process.argv.includes('--reply-subjects');
-const reader=process.argv.includes('--reader');
+const garden=process.argv.includes('--newsletter');
+const reader=process.argv.includes('--reader')||garden;
 const mail=folders||replySubjects||reader||process.argv.includes('--composer')?await startMailFixture(dir,folders,treeStyle?'INBOX/Projects/Travel':undefined):null;
 const imageRequests:{path?:string;cookie:boolean;referer:boolean;authorization:boolean}[]=[];
 const imageConnections:{count:number}={count:0};
@@ -31,11 +33,12 @@ const imageHost=reader?createHttps({key:readFileSync(join(dir,'mail.key')),cert:
  if(req.url==='/redirect.png'){
   res.writeHead(302,{Location:imageOrigin.replace('images.example.test','cdn.example.test')+'/final.png','Cache-Control':'no-store'});res.end();return;
  }
+ if(req.url==='/missing.png'){res.writeHead(404,{'Cache-Control':'no-store'});res.end();return;}
  res.writeHead(200,{'Content-Type':'image/png','Cache-Control':'no-store'}); // deliberately no CORS
  res.end(imageBytes);
 }):null;
 let imageOrigin='';
-if(imageHost){imageHost.on('connection',()=>{imageConnections.count++;});const listening=once(imageHost,'listening');imageHost.listen(0,'127.0.0.1');await listening;imageOrigin=`https://images.example.test:${(imageHost.address() as {port:number}).port}`;mail!.seedReader(imageOrigin);}
+if(imageHost){imageHost.on('connection',()=>{imageConnections.count++;});const listening=once(imageHost,'listening');imageHost.listen(0,'127.0.0.1');await listening;imageOrigin=`https://images.example.test:${(imageHost.address() as {port:number}).port}`;mail!.seedReader(imageOrigin,garden?[newsletter(imageOrigin),imageOnly(imageOrigin),missingImage(imageOrigin)]:[]);}
 if(replySubjects)mail?.seedReplySubjects();
 if(process.argv.includes('--context'))mail?.seedSent();
 const c={dbPath:join(dir,'app.sqlite'),key:randomBytes(32),password:randomBytes(24).toString('base64url'),origin:'http://127.0.0.1',secureCookie:false,allowedMail:mail?.allowedMail??[],sessionMs:3600000,staticRoot:resolve('dist/client'),...(mail?{mailMode:'fixture' as const,ca:mail.ca,timeoutMs:3000}:{}),...(folders?{pageSize:1}:{})};

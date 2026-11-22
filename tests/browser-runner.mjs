@@ -2,11 +2,11 @@
 // Fresh loopback-only harness per workflow/viewport; no production credentials.
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
-import {mkdir,mkdtemp,readFile,rm} from 'node:fs/promises';
+import {mkdir,mkdtemp,readFile,rm,writeFile} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {runTreeStyle} from './browser-tree-style.mjs';
 const chrome=process.argv[2];if(!chrome)throw Error('Pass an absolute Chrome/Chromium path');
-const workflows=process.argv.length>3?process.argv.slice(3):['folders','context','composer','b1','users','settings','reply-nl','reply-en','reader-nl','reader-en','tree-light','tree-dark'];
+const workflows=process.argv.length>3?process.argv.slice(3):['folders','context','composer','b1','users','settings','reply-nl','reply-en','reader-nl','reader-en','newsletter','tree-light','tree-dark'];
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 await mkdir('.test-data',{recursive:true,mode:0o700});
 const profile=await mkdtemp(resolve('.test-data/browser-chrome-'));
@@ -22,8 +22,9 @@ try{
   const record={kind,mobile};results.push(record);
   const replyLocale=kind==='reply-nl'?'nl':kind==='reply-en'?'en':null;
   const readerLocale=kind==='reader-nl'?'nl':kind==='reader-en'?'en':null;
+  const garden=kind==='newsletter',needsImage=readerLocale||garden;
   const treeTheme=kind==='tree-light'?'light':kind==='tree-dark'?'dark':null;
-  const h=start(process.execPath,['tests/browser-harness.ts',...(readerLocale?['--reader']:replyLocale?['--reply-subjects']:kind==='context'?['--folders','--context']:treeTheme?['--folders','--tree-style']:kind==='settings'?['--folders']:['folders','composer'].includes(kind)?[`--${kind}`]:[])]);
+  const h=start(process.execPath,['tests/browser-harness.ts',...(garden?['--newsletter']:readerLocale?['--reader']:replyLocale?['--reply-subjects']:kind==='context'?['--folders','--context']:treeTheme?['--folders','--tree-style']:kind==='settings'?['--folders']:['folders','composer'].includes(kind)?[`--${kind}`]:[])]);
   let origin,imageOrigin,tab,ws,harnessOutput='';h.stdout.on('data',chunk=>{harnessOutput+=chunk;const match=/BROWSER_HARNESS (http:\/\/127\.0\.0\.1:\d+)(?: (https:\/\/images\.example\.test:\d+))?\r?\n/.exec(harnessOutput);if(match)[,origin,imageOrigin]=match;});
   try{
    await poll(()=>origin);tab=await (await fetch(endpoint+'/json/new?about:blank',{method:'PUT'})).json();
@@ -35,7 +36,7 @@ try{
    });
    ws.onmessage=e=>{
     const {id,result,error,method,params}=JSON.parse(e.data);pending.get(id)?.(result,error);
-    if(!readerLocale)return;
+    if(!needsImage)return;
     if(method==='Target.attachedToTarget'&&params.targetInfo.type==='iframe'){
      const {sessionId,targetInfo}=params;
      imageFrames.set(targetInfo.targetId,sessionId);
@@ -48,7 +49,7 @@ try{
    await call('Emulation.setDeviceMetricsOverride',{width:mobile?(replyLocale||readerLocale?320:390):1280,height:mobile?844:900,deviceScaleFactor:mobile?3:1,mobile});
    await call('Emulation.setTouchEmulationEnabled',{enabled:mobile});
    if(treeTheme||kind==='settings')await call('Emulation.setEmulatedMedia',{features:[{name:'prefers-color-scheme',value:treeTheme??'dark'}]});
-   if(readerLocale){
+   if(needsImage){
     await call('Network.enable');await call('Security.setIgnoreCertificateErrors',{ignore:true});
     await call('Target.setAutoAttach',{autoAttach:true,waitForDebuggerOnStart:true,flatten:true,filter:[{type:'iframe'}]});
     const cookie=await call('Network.setCookie',{url:imageOrigin,name:'fixture_image_cookie',value:'synthetic',secure:true,sameSite:'None'});
@@ -67,6 +68,45 @@ try{
    else if(treeTheme)record.result=await runTreeStyle({call,evaluate,poll,mobile,theme:treeTheme,baseline:process.env.FOLDER_TREE_BASELINE==='1',screenshots:process.env.FOLDER_TREE_SCREENSHOTS});
    else if(kind==='context')record.result=await evaluate("import('/__test_folder_context.js').then(m=>m.runContext())",true);
    else if(replyLocale)record.result=await evaluate(`import('/__test_reply_subjects.js').then(m=>m.runReplySubjects(${JSON.stringify(replyLocale)}))`,true);
+   else if(garden){
+    const baseline=process.env.NEWSLETTER_BASELINE==='1',dir=process.env.NEWSLETTER_SCREENSHOTS;
+    const run=(method,arg='')=>evaluate(`import('/__test_reader.js').then(m=>m.${method}(${arg}))`,true);
+    const shot=async name=>{
+     if(!dir)return;
+     await mkdir(dir,{recursive:true});
+     const {cssContentSize:{height}}=await call('Page.getLayoutMetrics');
+     const {data}=await call('Page.captureScreenshot',{format:'png',fromSurface:true,captureBeyondViewport:true,clip:{x:0,y:0,width:record.viewport[0],height,scale:1}});
+     await writeFile(join(dir,`${name}-${mobile?'mobile':'desktop'}.png`),Buffer.from(data,'base64'));
+    };
+    const gesture=async point=>{
+     await call('Page.bringToFront');
+     if(mobile){await call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point]});await call('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});}
+     else for(const type of ['mousePressed','mouseReleased'])await call('Input.dispatchMouseEvent',{type,...point,button:'left',clickCount:1});
+    };
+    const image=expected=>poll(async()=>{
+     const sessions=[...imageFrames.values()];if(sessions.length!==1)return;
+     const value=await evaluate(`(() => {const img=document.querySelector('img');if(!img?.complete)return null;return {path:new URL(img.src).pathname,alt:img.alt,natural:img.naturalWidth,width:img.getBoundingClientRect().width,frameWidth:innerWidth};})()`,false,sessions[0]);
+     return value?.path===expected?value:null;
+    });
+    record.before=await run('gardenBefore',String(baseline));
+    if(observed.length)throw Error('CDP observed newsletter network before consent');
+    await shot(baseline?'before-blocked':'after-blocked');
+    await gesture(record.before.point);
+    record.gardenImage=await image('/garden.png');
+    if(record.gardenImage.natural!==640||record.gardenImage.width<=0||record.gardenImage.width>record.gardenImage.frameWidth)throw Error('Garden image did not decode responsively');
+    await shot(baseline?'before-loaded':'after-loaded');
+    record.result={passed:true};
+    if(!baseline){
+     const missingPoint=await run('gardenMissing');
+     if(observed.some(path=>path!=='/garden.png'))throw Error('Consent carried over to the missing image');
+     await gesture(missingPoint);
+     record.missingImage=await image('/missing.png');
+     if(record.missingImage.natural!==0||record.missingImage.alt!=='Archive illustration'||record.missingImage.width<=0)throw Error('Missing-image fallback did not render');
+     await shot('after-missing');
+     record.result=await run('gardenAfter');
+    }
+    record.browserRequests=observed;
+   }
    else if(readerLocale){
     record.before=await evaluate(`import('/__test_reader.js').then(m=>m.beforeConsent(${JSON.stringify(readerLocale)}))`,true);
     if(record.before.locale!==readerLocale||record.before.theme!=='dark'||observed.length||record.before.connections||record.before.requests.length)throw Error('Wrong preference or network before consent: '+JSON.stringify(observed));

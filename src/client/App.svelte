@@ -311,7 +311,11 @@
       <h2 id="readtitle" tabindex="-1">{reader.subjectMissing?t('noSubject'):reader.subject}</h2><p>{reader.from}</p><p class="note">{t('safeView')}</p>
       {#if readerFormat==='html'&&reader.formatted}
        {#key reader}<FormattedMail body={reader.formatted} text={reader.text} {t}/>{/key}
-      {:else}<pre>{reader.text}</pre>{/if}
+      {:else}
+       {#if readerFormat==='html'&&reader.htmlUnavailable}<p class="note">{t('htmlUnavailable')}</p>
+       {:else if readerFormat!=='html'&&reader.formatted?.images.length}<p class="note">{t('plainImageNote')}</p>{/if}
+       <pre>{reader.text}</pre>
+      {/if}
       {#if reader.attachments.length}<p>{t('attachments')}</p>{/if}
       <button class="primary" onclick={()=>newDraft(reader)} disabled={!!editor&&dirty}>{t('reply')}</button>
      {:else}<p class="empty">{t('chooseMessage')}</p>{/if}

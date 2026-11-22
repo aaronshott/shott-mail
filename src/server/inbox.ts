@@ -12,7 +12,8 @@ const pageSchema=z.coerce.number().int().min(0).max(100000);
 const summary=(item:FetchMessageObject,a:MailAccount,box:MailboxObject)=>({accountId:a.id,accountLabel:a.label,address:a.address,uid:item.uid,validity:String(box.uidValidity),subject:item.envelope?.subject??'',subjectMissing:item.envelope?.subject==null,from:item.envelope?.from?.map(v=>v.name||v.address).join(', ')??'',date:item.envelope?.date?new Date(item.envelope.date).toISOString():'',unread:!item.flags?.has('\\Seen')});
 export async function parseMessage(source:Buffer){
  const mail=await simpleParser(source,{skipHtmlToText:false,skipTextToHtml:true,skipImageLinks:true});
- return {subject:mail.subject??'',subjectMissing:mail.subject==null,from:mail.from?.text??'',replyTo:mail.replyTo?.value[0]?.address??mail.from?.value[0]?.address??'',text:mail.text??'',formatted:mail.html?formatBody(mail.html):null,attachments:mail.attachments.map(a=>({name:a.filename??'bijlage',size:a.size}))};
+ const formatted=mail.html?formatBody(mail.html):null;
+ return {subject:mail.subject??'',subjectMissing:mail.subject==null,from:mail.from?.text??'',replyTo:mail.replyTo?.value[0]?.address??mail.from?.value[0]?.address??'',text:mail.text??'',formatted,htmlUnavailable:typeof mail.html==='string'&&!formatted,attachments:mail.attachments.map(a=>({name:a.filename??'bijlage',size:a.size}))};
 }
 export function inboxRoutes(app:FastifyInstance,store:Store,c:MailPolicy){
  const accountFor=(owner:number,id:string)=>store.account(owner,z.string().uuid().parse(id)) as MailAccount;

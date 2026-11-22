@@ -1,6 +1,6 @@
 <script>
  import {onMount,tick} from 'svelte';
- import {formattingTags,imageURL} from '../reader-policy.ts';
+ import {boundedInteger,formattingTags,imageURL,maxReaderImages,tableWidth} from '../reader-policy.ts';
  import {imageFrameDocument} from '../image-frame.ts';
 
  let {body,text,t}=$props();
@@ -8,29 +8,45 @@
  const placeholders=[];
 
  onMount(()=>{
-  // The server sanitizer emits only inert formatting and generated image indices.
-  // Parse in a detached, inert template. Rebuild, never insert its nodes or attributes.
+  // Parse in a detached, inert template. Rebuild; never insert its nodes or copy attributes wholesale.
   const template=document.createElement('template');
   template.innerHTML=body.markup;
   function copy(from,to){
    for(const node of from.childNodes){
     if(node.nodeType===Node.TEXT_NODE){to.append(document.createTextNode(node.data));continue;}
     if(node.nodeType!==Node.ELEMENT_NODE||node.namespaceURI!=='http://www.w3.org/1999/xhtml')continue;
-    if(node.localName==='mail-image'){
-     const index=node.getAttribute('data-index');
+    const tag=node.localName;
+    if(tag==='mail-image'){
+     const index=node.getAttribute('data-index'),reason=node.getAttribute('data-reason');
      const url=/^\d{1,2}$/.test(index??'')?imageURL(body.images[Number(index)]??'',location.hostname):null;
      const alt=node.textContent;
-     if(!url||placeholders.length>=16){to.append(document.createTextNode(alt));continue;}
-     const slot=document.createElement('span');slot.textContent=alt;to.append(slot);
-     placeholders.push({slot,url,alt});
-    }else if(formattingTags.has(node.localName)){
-     const el=document.createElement(node.localName);copy(node,el);to.append(el);
+     const slot=document.createElement('span');slot.className='mail-image-placeholder';to.append(slot);
+     let label;
+     if(url&&placeholders.length<maxReaderImages){
+      label=t('remoteImageBlocked');placeholders.push({slot,url,alt});
+     }else{
+      label=t(reason==='inline'?'inlineImageUnavailable':reason==='srcset'?'srcsetImageUnavailable':reason==='limit'||url?'imageLimitReached':'imageSourceUnavailable');
+     }
+     slot.textContent=alt?`${label} — ${alt}`:label;
+    }else if(formattingTags.has(tag)){
+     const el=document.createElement(tag);
+     if(tag==='table'){
+      const width=tableWidth(node.getAttribute('data-width'));
+      if(width)el.setAttribute('width',width);
+      if(node.getAttribute('data-align')==='center')el.classList.add('mail-table-centered');
+      if(node.getAttribute('data-layout')==='presentation')el.setAttribute('role','presentation');
+     }else if(tag==='td'||tag==='th'){
+      for(const key of ['colspan','rowspan']){
+       const span=boundedInteger(node.getAttribute(key),12);if(span)el.setAttribute(key,span);
+      }
+     }
+     copy(node,el);to.append(el);
     }
    }
   }
   copy(template.content,target);
   available=placeholders.length>0;
-  usable=available||!!target.textContent.trim();
+  usable=!!target.textContent.trim();
  });
 
  async function allowImages(event){
@@ -42,8 +58,9 @@
    frame.setAttribute('credentialless',''); // extra isolation where supported; not credentials:omit
    frame.referrerPolicy='no-referrer';
    frame.title=alt||t('remoteImage');
-   frame.srcdoc=imageFrameDocument(url,alt);
-   slot.replaceChildren(frame);
+   // The sandbox is opaque: use native image alt fallback rather than treating frame load as image success.
+   frame.srcdoc=imageFrameDocument(url,alt||t('remoteImageUnavailable'));
+   slot.className='mail-image-frame';slot.replaceChildren(frame);
   }
   await tick();
   if(status?.isConnected)status.focus({preventScroll:true});
@@ -52,9 +69,13 @@
 
 {#if available}
  <div class="image-controls">
-  {#if !consented}<p id="image-privacy" class="note">{t('imagePrivacy')}</p><button type="button" aria-describedby="image-privacy" onclick={allowImages}>{t('loadImages')}</button>{/if}
+  {#if !consented}
+   <button class="primary" type="button" aria-describedby="image-privacy" onclick={allowImages}>{t('loadImages')}</button>
+   <p id="image-privacy" class="note">{t('imagePrivacy')}</p>
+  {/if}
   <p role="status" tabindex="-1" bind:this={status}>{consented?t('imagesRequested'):''}</p>
  </div>
 {/if}
 <div class="formatted-mail" bind:this={target} hidden={!usable}></div>
-{#if usable}<details><summary>{t('textView')}</summary><pre>{text}</pre></details>{:else}<pre>{text}</pre>{/if}
+{#if usable&&text.trim()}<details class="mail-text-view"><summary>{t('textView')}</summary><pre>{text}</pre></details>
+{:else if !usable}<p class="note">{t('htmlUnavailable')}</p>{#if text.trim()}<pre>{text}</pre>{/if}{/if}

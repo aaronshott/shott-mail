@@ -21,7 +21,7 @@ test('only real HTML body becomes inert structured content; preserve the plain a
 
 test('allowlisted formatting and explicit HTTPS image candidates only',async()=>{
  const parsed=await parseMessage(html('<p><a href="https://example.test/news">News</a> <img src="https://images.example.test/p.png?a=1&amp;b=2" srcset="https://example.test/large.png 2x" alt="Photo"> <img src="/logo.png" alt="Logo"></p><form><label>Search <input name="q"></label></form>'));
- assert.deepEqual(parsed.formatted,{markup:'<p>News <mail-image data-index="0">Photo</mail-image> <span>Logo</span></p>',images:['https://images.example.test/p.png?a=1&b=2']});
+ assert.deepEqual(parsed.formatted,{markup:'<p>News <mail-image data-index="0">Photo</mail-image> <mail-image data-reason="source">Logo</mail-image></p>',images:['https://images.example.test/p.png?a=1&b=2']});
  assert.ok(parsed.text.includes('News'));
  assert.equal((await parseMessage(html('<div> </div>'))).formatted,null);
  assert.equal((await parseMessage(html('<blockquote>'.repeat(70)+'deep'+'</blockquote'.repeat(70)))).formatted,null);
