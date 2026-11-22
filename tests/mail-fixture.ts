@@ -6,13 +6,13 @@ import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {randomBytes} from 'node:crypto';
 
-export async function startMailFixture(dir:string,folders=false){
+export async function startMailFixture(dir:string,folders=false,nested='INBOX/Projects/&ZcWITA-'){ // modified UTF-7: 旅行 by default
  const key=join(dir,'mail.key'),cert=join(dir,'mail.crt');
  execFileSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',key,'-out',cert,'-days','1','-subj','/CN=127.0.0.1','-addext','subjectAltName=IP:127.0.0.1'],{stdio:'ignore'});
  const ca=readFileSync(cert,'utf8'),options={key:readFileSync(key),cert:ca};
  const users=['work','private','other'].map(name=>`${name}@example.test`);
  const passwords=new Map(users.map(user=>[user,randomBytes(24).toString('hex')]));
- const nested='INBOX/Projects/&ZcWITA-'; // modified UTF-7: 旅行
+
  const sent='Shared/Verzonden',custom='Shared/Custom &- Sent';
  const paths=new Map(users.map(user=>[user,new Map<string,string[]>([
   ['INBOX',[`From: sender@example.test\r\nTo: ${user}\r\nDate: Fri, 20 Nov 2026 12:00:00 +0000\r\nSubject: Seed for ${user}\r\n\r\nPrivate body for ${user}\r\n`]],
