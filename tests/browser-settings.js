@@ -34,8 +34,8 @@ export async function runSettings(){
  assert(getComputedStyle(summary).borderInlineStartWidth==='0px','decorative folder frame remains');
  expand.focus();expand.click();await wait(0);
  assert(document.activeElement===expand&&expand.getAttribute('aria-expanded')==='true'&&pick('INBOX'),'selectable parent lacks independent disclosure');
- const nested=aside.querySelector('.folder-list.indent');
- assert(nested&&getComputedStyle(nested).borderInlineStartWidth==='0px'&&parseFloat(getComputedStyle(nested).paddingInlineStart)>0,'folder hierarchy lost or decorative line remains');
+ const nested=aside.querySelector('.folder-list .folder-list .folder-row');
+ assert(nested&&getComputedStyle(nested).borderInlineStartWidth==='0px'&&nested.firstElementChild.getBoundingClientRect().left>expand.getBoundingClientRect().left,'folder hierarchy lost or decorative line remains');
  pick('INBOX').click();await idle();
  assert(h1().textContent==='INBOX'&&document.activeElement===h1(),'folder navigation failed to focus heading');
  assert(!mobile||!aside.getClientRects().length,'mobile navigation stayed open');

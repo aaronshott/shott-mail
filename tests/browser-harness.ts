@@ -19,9 +19,10 @@ function newsletterPng(){
 }
 mkdirSync('.test-data',{recursive:true,mode:0o700});const dir=mkdtempSync(resolve('.test-data/browser-'));
 const folders=process.argv.includes('--folders');
+const treeStyle=process.argv.includes('--tree-style');
 const replySubjects=process.argv.includes('--reply-subjects');
 const reader=process.argv.includes('--reader');
-const mail=folders||replySubjects||reader||process.argv.includes('--composer')?await startMailFixture(dir,folders):null;
+const mail=folders||replySubjects||reader||process.argv.includes('--composer')?await startMailFixture(dir,folders,treeStyle?'INBOX/Projects/Travel':undefined):null;
 const imageRequests:{path?:string;cookie:boolean;referer:boolean;authorization:boolean}[]=[];
 const imageConnections:{count:number}={count:0};
 const imageBytes=reader?newsletterPng():null;
@@ -41,7 +42,10 @@ const c={dbPath:join(dir,'app.sqlite'),key:randomBytes(32),password:randomBytes(
 const store=new Store(c.dbPath,c.key,c.password);
 for(const label of ['Werk','Privé']){
  const user=label==='Werk'?'work':'private';
- if(mail){const {imap:{password:i,...imap},smtp:{password:s,...smtp},address}=mail.mailbox(user);store.putAccount(1,randomUUID(),{label,address,imap,smtp},{imap:i,smtp:s});}
+ if(mail){const {imap:{password:i,...imap},smtp:{password:s,...smtp},address}=mail.mailbox(user);
+  const id=treeStyle?`00000000-0000-4000-8000-00000000000${user==='work'?1:2}`:randomUUID();
+  const account={label,address,imap,smtp};
+  store.putAccount(1,id,account,{imap:i,smtp:s});}
  else store.putAccount(1,randomUUID(),{label,address:`${user}@example.test`,imap:{host:'mail.invalid',port:993,tls:'implicit',user},smtp:{host:'mail.invalid',port:465,tls:'implicit',user}},{imap:randomBytes(24).toString('hex'),smtp:randomBytes(24).toString('hex')});
 }store.close();
 const app=await buildApp(c);

@@ -16,17 +16,33 @@ a{color:var(--link)}
 .mobile-nav-toggle{display:none}
 #mailbox-nav nav{display:grid;grid-template-columns:minmax(0,1fr);overflow:visible}
 #mailbox-nav button{overflow-wrap:anywhere}
-#mailbox-nav button[aria-current="page"]{background:var(--pale);border-inline-start:4px solid var(--link);font-weight:650}
+#mailbox-nav nav>button[aria-current="page"]{background:var(--pale);border-inline-start:4px solid var(--link);font-weight:650}
 .folder-section{display:grid;gap:6px;margin-block:8px}
 .folder-heading{font-weight:650}
-.account-folders>summary{min-height:44px;padding:8px;cursor:pointer;overflow-wrap:anywhere}
-.account-folders[open]>summary{background:var(--pale);margin-bottom:5px}
 .account-folders>button{width:100%}
-.folder-list{padding:0;margin:5px 0;list-style:none}
-.folder-list.indent{padding-inline-start:8px}
-.folder-row{display:flex;gap:3px;align-items:stretch;margin-block:3px}
-.folder-toggle{flex:0 0 44px;padding:0;text-align:center!important}
-.folder-label,.folder-select{flex:1;min-width:0;padding:7px 6px;overflow-wrap:anywhere}
+.folder-list{padding:0;margin:0;list-style:none}
+.folder-row,.folder-account{display:grid;grid-template-columns:44px minmax(0,1fr);min-height:44px}
+.folder-row{padding-inline-start:calc(var(--folder-depth,0) * 10px)}
+.account-folders :is(.folder-account,.folder-select,.folder-toggle){
+ appearance:none;background:none;border:0;border-radius:0;box-shadow:none;color:inherit;
+}
+.folder-account{align-items:center;padding:4px 6px 4px 0;cursor:pointer;list-style:none}
+.folder-account::-webkit-details-marker{display:none}
+.folder-account .folder-text{font-weight:650}
+.folder-account small{font-weight:400}
+.folder-toggle,.account-chevron{display:grid;place-items:center;padding:0;grid-column:1}
+.folder-chevron,.folder-icon{display:block;flex:none;color:var(--muted)}
+.folder-chevron:dir(rtl){transform:scaleX(-1)}
+.account-folders[open]>.folder-account .folder-chevron,.folder-toggle[aria-expanded="true"] .folder-chevron{transform:rotate(90deg)}
+.folder-label,.folder-select{grid-column:2;display:flex;align-items:center;gap:6px;min-width:0;padding:4px 6px 4px 0}
+.folder-text{min-width:0;overflow-wrap:anywhere}
+.folder-row:has(>.folder-select[aria-current="page"]){background:color-mix(in srgb,var(--ink) 9%,var(--sidebar))}
+.folder-select[aria-current="page"] .folder-text{font-weight:650}
+.folder-select small{font-weight:400}
+@media(hover:hover){
+ .folder-account:hover,.folder-row:has(>button:hover):not(:has(>.folder-select[aria-current="page"])){background:color-mix(in srgb,var(--ink) 5%,var(--sidebar))}
+}
+.account-folders :is(.folder-account,.folder-toggle,.folder-select):focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
 .account-folders small{display:block;color:var(--muted);overflow-wrap:anywhere}
 .mail time{font-size:.85rem;color:var(--muted)}
 .formatted-mail{overflow-wrap:anywhere;overflow:auto;min-width:0}
