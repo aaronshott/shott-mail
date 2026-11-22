@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import {headerPaths} from './header-fixture.ts';
+import {headerPaths,sizingPaths} from './header-fixture.ts';
 
 export async function runHeader({call,evaluate,poll,run,gesture,imageFrames,observed,origin,mobile,record,theme,dir}){
  const baseline=process.env.HEADER_BASELINE==='1';
+ const expected=[...headerPaths,...sizingPaths,...(baseline?['/header-alternate.png']:[])];
  record.before=await run('headerBefore',JSON.stringify(theme));
  assert.deepEqual(observed,[],'browser observed image traffic before consent');
  await gesture(record.before.point);
  record.decoded=await poll(async()=>{
-  const sessions=[...imageFrames.values()];if(sessions.length!==(baseline?5:4))return;
+  const sessions=[...imageFrames.values()];if(sessions.length!==expected.length)return;
   const decoded=await Promise.all(sessions.map(id=>evaluate(`(() => {
    const i=document.querySelector('img');if(!i?.complete||!i.naturalWidth)return null;
    const r=i.getBoundingClientRect();return {path:new URL(i.src).pathname,natural:[i.naturalWidth,i.naturalHeight],paint:[r.width,r.height],scheme:getComputedStyle(document.documentElement).colorScheme,static:document.scripts.length===0};
@@ -17,15 +18,15 @@ export async function runHeader({call,evaluate,poll,run,gesture,imageFrames,obse
   return decoded.every(Boolean)?decoded:null;
  });
  record.after=await run('headerAfter');
- const expected=baseline?[...headerPaths,'/header-alternate.png']:headerPaths;
  assert.deepEqual(record.after.requests.map(r=>r.path).sort(),[...expected].sort());
  assert.ok(record.after.requests.every(r=>!r.cookie&&!r.referer&&!r.authorization));
  assert.ok(record.decoded.every(i=>i.static));
  const geometry=reference=>evaluate(`(() => {
   const root=document.querySelector(${JSON.stringify(reference?'main':'.formatted-mail')}),{x,y,width}=root.getBoundingClientRect();
   const box=el=>{const r=el.getBoundingClientRect(),n=v=>Math.round(v*10)/10;return [n(r.x-x),n(r.y-y),n(r.width),n(r.height)]};
-  const tables=[...root.querySelectorAll('table')].filter(t=>t.getClientRects().length);
-  const art=[...root.querySelectorAll(${JSON.stringify(reference?'img':'iframe')})].filter(i=>i.getClientRects().length);
+  const header=root.querySelector(':scope > div');
+  const tables=[...header.querySelectorAll('table')].filter(t=>t.getClientRects().length);
+  const art=[...header.querySelectorAll(${JSON.stringify(reference?'img':'iframe')})].filter(i=>i.getClientRects().length);
   return {x:Math.round(x+scrollX),y:Math.round(y+scrollY),width,tables:tables.map(box),art:art.map(box),heading:box(root.querySelector('h1')), lines:[...tables[0].querySelectorAll('td>span:not([class])')].map(el=>{const r=document.createRange();r.selectNodeContents(el);return r.getClientRects().length})};
  })()`);
  const crop=async (name,rect)=>{
@@ -49,15 +50,25 @@ export async function runHeader({call,evaluate,poll,run,gesture,imageFrames,obse
  };
  record.reader=await geometry(false);
  await call('Page.bringToFront');
- record.readerPixels=await crop(baseline?'baseline':'candidate',record.reader);
+ // Decode can finish before an out-of-process iframe submits its first
+ // compositor frame. The sample must be painted, not just decoded.
+ record.readerPixels=baseline?await crop('baseline',record.reader):await poll(async()=>{
+  const pixels=await crop('candidate',record.reader);
+  return pixels.heroTop.join(',')==='112,173,157'&&pixels.countdown>1000?pixels:null;
+ });
+ record.reset=await run('headerReset');
  await call('Emulation.setDeviceMetricsOverride',{width:record.reader.width,height:844,deviceScaleFactor:1,mobile});
  await call('Page.navigate',{url:origin+'/__test_header'});
  await poll(()=>evaluate(`location.pathname==='/__test_header'&&document.readyState==='complete'&&[...document.images].every(i=>i.naturalWidth)`));
  record.reference=await geometry(true);
  record.referencePixels=await crop('reference',record.reference);
+ const controls=await evaluate(`Object.fromEntries([...document.querySelectorAll('main > div + div img')].map(i=>{
+  const r=i.getBoundingClientRect();return ['/'+new URL(i.src).pathname.split('/').at(-1),[r.width,r.height]];
+ }))`);
+ record.sizing=Object.fromEntries(sizingPaths.map(path=>[path,{reader:record.decoded.find(i=>i.path===path).paint,reference:controls[path]}]));
  const a=record.reader,b=record.reference,p=record.readerPixels,q=record.referencePixels;
  assert.equal(a.width,b.width);
- if(!mobile)assert.equal(a.width,720);
+ assert.equal(a.width,mobile?354:720);
  if(baseline){
   assert.ok(a.tables.length>b.tables.length&&a.art[0][3]>b.art[0][3]*2&&a.heading[1]>b.heading[1]+60,'baseline geometry did not reproduce');
   assert.notDeepEqual(p.logoCorner,q.logoCorner,'baseline opaque iframe did not reproduce');
@@ -73,8 +84,15 @@ export async function runHeader({call,evaluate,poll,run,gesture,imageFrames,obse
   assert.ok(p.countdown>1000&&p.countdown===q.countdown,'static countdown pixels missing');
   assert.ok(a.art[0][2]<=126&&a.art[0][3]<=36&&a.art[1][2]<=24&&a.art[1][3]<=36,'unbounded compact art');
   assert.ok(Math.abs(a.heading[1]-b.heading[1])<=10&&Math.abs(a.art[3][1]-b.art[3][1])<=10,'heading/hero not aligned to reference');
+  assert.ok(Math.abs(a.art[2][1]-b.art[2][1])<=10,'countdown not vertically aligned to reference');
   assert.ok(Math.abs(a.art[2][0]+a.art[2][2]/2-a.width/2)<=1,'countdown not centered');
   assert.deepEqual(record.decoded.find(i=>i.path===headerPaths[2]).natural,[240,72]);
+  assert.deepEqual(record.decoded.find(i=>i.path===headerPaths[0]).paint,[126,28]);
+  assert.deepEqual(record.decoded.find(i=>i.path===headerPaths[1]).paint,[24,24]);
+  assert.deepEqual(record.after.dataTable,{caption:'Field observations',headers:['Illustration','Observation'],label:'Trail marker',role:null,layout:'fixed',border:'1px'});
+  const mismatches=Object.entries(record.sizing).filter(([, {reader,reference}])=>
+   !reference?.every((size,i)=>size>0&&Math.abs(reader[i]-size)<=1));
+  assert.deepEqual(Object.fromEntries(mismatches),{},'painted image sizes differ from native reference');
  }
  return {passed:true};
 }

@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import {parseMessage} from '../src/server/inbox.ts';
 import {newsletter,imageOnly,edition,editionImages,studio,diagnostics,pictureFixtures,picturePaths} from './newsletter-fixture.ts';
 import {formatBody} from '../src/server/format-body.ts';
-import {headerMail,headerPaths} from './header-fixture.ts';
+import {headerMail,headerPaths,sizingPaths} from './header-fixture.ts';
 
 test('header MIME retains bounded width-only images and omits explicitly hidden alternate before collecting URLs',async()=>{
  const origin='https://images.example.test';
  const {formatted}=await parseMessage(Buffer.from(headerMail(origin)));
- assert.deepEqual(formatted?.images,headerPaths.map(path=>origin+path));
+ assert.deepEqual(formatted?.images,[...headerPaths,...sizingPaths].map(path=>origin+path));
  assert.match(formatted!.markup,/data-image-width="126">Pine Post/);
  assert.match(formatted!.markup,/data-image-width="24">Field icon/);
  assert.match(formatted!.markup,/data-image-width="240" data-image-height="72">Static countdown/);

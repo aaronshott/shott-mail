@@ -77,8 +77,10 @@ a{color:var(--link)}
 .mail-image-frame,.formatted-mail iframe{display:block;inline-size:100%;min-inline-size:0}
 .formatted-mail iframe{block-size:clamp(5rem,24cqi,12rem);border:0;background:transparent;color-scheme:light}
 .formatted-mail .mail-image-centered{margin-inline:auto}
-/* No intrinsic size is exposed across the opaque frame. Bound width-only
-   compact art to a short viewport instead of the generic photo fallback. */
+/* No intrinsic size is exposed across the opaque frame. A bounded 1:2
+   viewport gives width-only illustrations portrait headroom, without ever
+   reducing the generic fallback height. Mixed compact layout rows opt out. */
+.formatted-mail .mail-image-width-only>iframe{block-size:auto;aspect-ratio:1 / 2;min-block-size:clamp(5rem,24cqi,12rem);max-block-size:16rem}
 .formatted-mail .mail-image-short>iframe{block-size:32px}
 .formatted-mail .mail-image-sized{position:relative;min-block-size:1.5rem;max-block-size:28rem}
 .formatted-mail .mail-image-sized>iframe{position:absolute;inset:0;block-size:100%}

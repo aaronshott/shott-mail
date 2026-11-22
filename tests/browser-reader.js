@@ -83,7 +83,20 @@ export async function headerAfter(){
  assert(!body.querySelector('a,img,[href],script,style'),'unexpected active header content');
  const ink=['Dispatch window','09:00 UTC','Trail conditions','Clear'].map(label=>measureInk(body,label));
  body.scrollIntoView({block:'start'});
- return {ink,requests:await requests(),overflow:body.scrollWidth>body.clientWidth||document.documentElement.scrollWidth>innerWidth};
+ const data=body.querySelector('table:has(caption)');
+ const dataTable=data&&{caption:data.caption.textContent,headers:[...data.tHead.rows[0].cells].map(c=>c.textContent),
+  label:data.tBodies[0].rows[0].cells[1].textContent,role:data.getAttribute('role'),layout:getComputedStyle(data).tableLayout,
+  border:getComputedStyle(data.querySelector('td')).borderTopWidth};
+ return {ink,dataTable,requests:await requests(),overflow:body.scrollWidth>body.clientWidth||document.documentElement.scrollWidth>innerWidth};
+}
+
+export async function headerReset(){
+ const before={requests:(await requests()).length,connections:await connections()};
+ click('← Back to list');await open('header');await pause(250);
+ assert(button('Load remote images')&&!reader().querySelector('img,iframe'),'header consent persisted on reopen');
+ const after={requests:(await requests()).length,connections:await connections()};
+ assert(after.requests===before.requests&&after.connections===before.connections,'header reopen contacted host');
+ return {before,after};
 }
 
 function measureInk(body,label){

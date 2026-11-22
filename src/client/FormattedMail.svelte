@@ -86,6 +86,18 @@
  async function allowImages(event){
   if(!event.isTrusted||consented||!available)return;
   consented=true;
+  // Only compact an image-only cell in an explicit, single-row layout
+  // table that shares the row with live text. Classify before replacing
+  // placeholders, so their labels cannot count as live text.
+  const short=new Set(placeholders.filter(({slot,width,height})=>{
+   if(!width||height||Number(width)>160)return false;
+   const cell=slot.parentElement,row=cell?.parentElement,table=row?.parentElement?.parentElement;
+   return cell?.localName==='td'&&row?.localName==='tr'&&table?.matches('table[role=presentation]')&&
+    table.rows.length===1&&cell.children.length===1&&
+    ![...cell.childNodes].some(n=>n.nodeType===Node.TEXT_NODE&&n.textContent.trim())&&
+    [...row.cells].every(c=>c.localName==='td'&&c.colSpan===1&&c.rowSpan===1)&&
+    [...row.cells].some(c=>c!==cell&&c.textContent.trim()&&!c.querySelector('table,.mail-image-placeholder'));
+  }).map(({slot})=>slot));
   for(const {slot,url,alt,width,height} of placeholders){
    const frame=document.createElement('iframe');
    frame.setAttribute('sandbox','');
@@ -99,7 +111,7 @@
     if(height)slot.style.maxWidth=`min(100%, ${width}px)`;
     else slot.style.width=`${width}px`;
     if(getComputedStyle(slot).textAlign==='center')slot.classList.add('mail-image-centered');
-    if(!height&&Number(width)<=160)slot.classList.add('mail-image-short');
+    if(!height)slot.classList.add(short.has(slot)?'mail-image-short':'mail-image-width-only');
    }
    if(width&&height){
     slot.classList.add('mail-image-sized');
