@@ -15,8 +15,21 @@ export function newsletter(origin:string){
  return (headers('Reader garden')+'Content-Type: multipart/alternative; boundary=alt\n\n--alt\nContent-Type: text/plain; charset=utf-8\n\nField Notes: Make room for winter birds. Refresh dishes and leave seed heads standing.\n--alt\nContent-Type: multipart/related; boundary=related\n\n--related\nContent-Type: text/html; charset=utf-8\n\n'+body+'\n--related\nContent-Type: image/png\nContent-Transfer-Encoding: base64\nContent-ID: <club-logo@example.test>\nContent-Disposition: inline; filename="club.png"\n\n'+logo+'\n--related--\n--alt--\n').replace(/\r?\n/g,'\r\n');
 }
 export function imageOnly(origin:string){
- return headers('Reader unavailable')+`Content-Type: text/html; charset=utf-8\r\n\r\n<img src="cid:missing@example.test"><img src="data:image/png;base64,${logo}"><img src="http://images.example.test/post.png"><img srcset="${origin}/only-2x.png 2x"><img src="//images.example.test/relative.png">\r\n`;
+ return headers('Reader unavailable')+`Content-Type: text/html; charset=utf-8\r\n\r\n<img src="cid:missing@example.test"><img src="data:image/png;base64,${logo}"><img src="http://images.example.test/post.png"><img srcset="${origin}/only-2x.png 2x"><img src="/relative.png">\r\n`;
 }
 export function missingImage(origin:string){
  return headers('Reader missing')+`Content-Type: text/html; charset=utf-8\r\n\r\n<h1>Monthly notice</h1><img src="${origin}/missing.png" alt="Archive illustration">\r\n`;
+}
+
+export const editionImages=['/orchard.png?edition=7&crop=wide','/market.png?edition=7&size=compact'];
+export function edition(origin:string){
+ const [hero,market]=editionImages.map(path=>path.replace('&','&amp;'));
+ return headers('Reader edition')+`Content-Type: text/html; charset=utf-8\r\n\r\n<table role="presentation" width="640" align="center"><tr><td>
+<style>@import url('${origin}/remote.css');</style>
+<p><strong>FIELD NOTES / DECEMBER</strong></p><h1>A winter orchard walk</h1>
+<p>Look for winter birds along the hedge, then stop by the market.</p>
+<img src="${origin.replace(/^https:/,'')}${hero}" data-src="${origin}/unused.png" alt="Orchard at dawn">
+<p><img src="/spacer.gif" data-src="${origin}${market}" alt="Market stalls"></p>
+<p style="background:url('${origin}/background.png')"><img src="/map.png" alt="Walking map"> <img src="/badge.png" alt="Community badge"> <img src="/spacer.png"></p>
+</td></tr></table>\r\n`;
 }

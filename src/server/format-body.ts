@@ -11,7 +11,7 @@ const cell:sanitize.Transformer=(tagName,attrs)=>{
  return {tagName,attribs};
 };
 
-export function formatBody(html:string):{markup:string;images:string[]}|null {
+export function formatBody(html:string,appHostname=''):{markup:string;images:string[]}|null {
  try{
   let count=0,depth=0;
   const images:string[]=[];
@@ -31,10 +31,14 @@ export function formatBody(html:string):{markup:string;images:string[]}|null {
     },
     td:cell,th:cell,
     img:(_tag,attrs):sanitize.Tag=>{
-     const src=(attrs.src??'').trim(),url=imageURL(src),text=(attrs.alt??'').trim().slice(0,512);
+     const src=(attrs.src??'').trim();
+     // Only authority-relative src is upgraded. Never resolve against the app URL.
+     const candidate=/^\/\/[^/\\\s]/.test(src)?`https:${src}`:src;
+     const url=imageURL(candidate,appHostname)??imageURL((attrs['data-src']??'').trim(),appHostname);
+     const text=(attrs.alt??'').trim().slice(0,512);
      let index=url?images.indexOf(url):-1;
      if(url&&index<0&&images.length<maxReaderImages)index=images.push(url)-1;
-     const reason=/^cid:/i.test(src)?'inline':url?'limit':!src&&attrs.srcset?.trim()?'srcset':'source';
+     const reason=url?'limit':/^cid:/i.test(src)?'inline':!src&&attrs.srcset?.trim()?'srcset':'source';
      return {tagName:marker,attribs:index>=0?{'data-index':String(index)}:{'data-reason':reason},text};
     }
    }

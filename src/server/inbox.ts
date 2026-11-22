@@ -10,12 +10,13 @@ import type {ImapFlow,FetchMessageObject,MailboxObject} from 'imapflow';
 const validitySchema=z.string().regex(/^\d{1,20}$/);
 const pageSchema=z.coerce.number().int().min(0).max(100000);
 const summary=(item:FetchMessageObject,a:MailAccount,box:MailboxObject)=>({accountId:a.id,accountLabel:a.label,address:a.address,uid:item.uid,validity:String(box.uidValidity),subject:item.envelope?.subject??'',subjectMissing:item.envelope?.subject==null,from:item.envelope?.from?.map(v=>v.name||v.address).join(', ')??'',date:item.envelope?.date?new Date(item.envelope.date).toISOString():'',unread:!item.flags?.has('\\Seen')});
-export async function parseMessage(source:Buffer){
+export async function parseMessage(source:Buffer,appHostname=''){
  const mail=await simpleParser(source,{skipHtmlToText:false,skipTextToHtml:true,skipImageLinks:true});
- const formatted=mail.html?formatBody(mail.html):null;
+ const formatted=mail.html?formatBody(mail.html,appHostname):null;
  return {subject:mail.subject??'',subjectMissing:mail.subject==null,from:mail.from?.text??'',replyTo:mail.replyTo?.value[0]?.address??mail.from?.value[0]?.address??'',text:mail.text??'',formatted,htmlUnavailable:typeof mail.html==='string'&&!formatted,attachments:mail.attachments.map(a=>({name:a.filename??'bijlage',size:a.size}))};
 }
-export function inboxRoutes(app:FastifyInstance,store:Store,c:MailPolicy){
+export function inboxRoutes(app:FastifyInstance,store:Store,c:MailPolicy & {origin:string}){
+ const appHostname=new URL(c.origin).hostname;
  const accountFor=(owner:number,id:string)=>store.account(owner,z.string().uuid().parse(id)) as MailAccount;
  app.get<{Params:{account:string}}>('/api/accounts/:account/folders',async(req,reply)=>{
   const owner=req.principal!.userId,a=accountFor(owner,req.params.account);
@@ -45,7 +46,7 @@ export function inboxRoutes(app:FastifyInstance,store:Store,c:MailPolicy){
    if(!folder)return reply.code(404).send({error:'FOLDER_UNAVAILABLE'});
    const box=await client.mailboxOpen(folder.path,{readOnly:true});
    if(String(box.uidValidity)!==validity)return reply.code(409).send({error:'MESSAGE_IDENTITY_CHANGED'});
-   return replyWithMessage(client,a,uid,reply,c);
+   return replyWithMessage(client,a,uid,reply,c,appHostname);
   });}catch{return reply.code(502).send({error:'MAIL_UNAVAILABLE'});}
  });
  app.get<{Querystring:{account?:string;page?:string}}>('/api/inbox',async req=>{
@@ -78,12 +79,12 @@ export function inboxRoutes(app:FastifyInstance,store:Store,c:MailPolicy){
    client=await imap({...a.imap,password:store.credentials(owner,account).imap},c);await client.connect();
    const box=await client.mailboxOpen('INBOX',{readOnly:true});
    if(String(box.uidValidity)!==validity)return reply.code(409).send({error:'MESSAGE_IDENTITY_CHANGED'});
-   return await replyWithMessage(client,a,uid,reply,c);
+   return await replyWithMessage(client,a,uid,reply,c,appHostname);
   }finally{client?.close();}
  });
 }
 
-async function replyWithMessage(client:ImapFlow,a:MailAccount,uid:number,reply:import('fastify').FastifyReply,c:MailPolicy){
+async function replyWithMessage(client:ImapFlow,a:MailAccount,uid:number,reply:import('fastify').FastifyReply,c:MailPolicy,appHostname:string){
    const limit=c.maxMessageBytes??2097152;
    const info=await client.fetchOne(String(uid),{size:true},{uid:true});
    if(!info)return reply.code(404).send({error:'MESSAGE_GONE'});
@@ -91,5 +92,5 @@ async function replyWithMessage(client:ImapFlow,a:MailAccount,uid:number,reply:i
    const item=await client.fetchOne(String(uid),{source:{maxLength:limit+1}},{uid:true});
    if(!item||!item.source)return reply.code(404).send({error:'MESSAGE_GONE'});
    if(item.source.length>limit)return reply.code(413).send({error:'MESSAGE_TOO_LARGE'});
-   return {...await parseMessage(item.source),accountId:a.id,accountLabel:a.label,address:a.address};
+   return {...await parseMessage(item.source,appHostname),accountId:a.id,accountLabel:a.label,address:a.address};
 }

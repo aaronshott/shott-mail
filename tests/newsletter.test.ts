@@ -1,7 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {parseMessage} from '../src/server/inbox.ts';
-import {newsletter,imageOnly} from './newsletter-fixture.ts';
+import {newsletter,imageOnly,edition,editionImages} from './newsletter-fixture.ts';
+
+test('newsletter promotes protocol-relative src to HTTPS and uses eligible data-src as fallback',async()=>{
+ const origin='https://images.example.test:4443';
+ const {formatted}=await parseMessage(Buffer.from(edition(origin)));
+ assert.deepEqual(formatted?.images,editionImages.map(path=>origin+path));
+ assert.match(formatted!.markup,/<mail-image data-index="0">Orchard at dawn<\/mail-image>/);
+ assert.match(formatted!.markup,/<mail-image data-index="1">Market stalls<\/mail-image>/);
+ assert.match(formatted!.markup,/<mail-image data-reason="source">Walking map<\/mail-image>/);
+ assert.doesNotMatch(formatted!.markup,/data-src|background|remote\.css|unused\.png/);
+});
 
 test('multipart newsletter retains normalized table layout and separates CID from external images',async()=>{
  const origin='https://images.example.test';

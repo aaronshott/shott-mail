@@ -54,28 +54,58 @@ export async function afterConsent(){
  }
 }
 
-export async function gardenBefore(baseline){
+async function openNewsletter(name,baseline=false){
  await idle();await open('garden');
  assert(!reader().querySelector('.image-controls,.formatted-mail'),'plain default changed');
  if(!baseline)assert(reader().textContent.includes('tekstmodus'),'missing plain-mode explanation');
  click('Instellingen');await pause(0);
  const prefs=document.querySelectorAll('main select');
  set(prefs[0],'en');set(prefs[1],'light');set(prefs[2],'html');await pause(0);click('Instellingen opslaan');await idle();click('Back');
+ await open(name);
+}
+
+export async function editionBefore(){
+ await openNewsletter('edition');
+ const body=reader().querySelector('.formatted-mail');
+ assert(body?.querySelector('h1')?.textContent==='A winter orchard walk','fixture not visible');
+ assert(!body.querySelector('img,iframe,style,link,[src],[data-src],[style]'),'sender markup became active');
+ const control=button('Load remote images');control?.click();await pause(250);
+ const pre={requests:await requests(),connections:await connections()};
+ assert(pre.requests.length===0&&pre.connections===0,'image host contacted before trusted consent');
+ const text=reader().textContent;
+ assert(body.scrollWidth<=body.clientWidth+1&&document.documentElement.scrollWidth<=innerWidth,'newsletter overflows');
+ return {...pre,point:control?gardenPoint():null,oldWarnings:(text.match(/Image source is not supported/g)??[]).length,
+  summary:reader().querySelector('.image-source-summary')?.textContent??null,
+  alt:['Orchard at dawn','Market stalls','Walking map','Community badge'].every(alt=>body.textContent.includes(alt))};
+}
+
+export async function editionReopen(){
+ const frames=[...reader().querySelectorAll('.formatted-mail iframe')];
+ assert(frames.length===2&&frames.every(f=>f.getAttribute('sandbox')===''&&f.referrerPolicy==='no-referrer'&&f.contentDocument===null),'images are not isolated');
+ assert(document.documentElement.scrollWidth<=innerWidth,'loaded newsletter overflows');
+ const loaded=await requests(),count=await connections();
+ click('← Back to list');await open('edition');await pause(250);
+ assert(button('Load remote images')&&!reader().querySelector('iframe,img'),'consent carried over on reopen');
+ assert((await requests()).length===loaded.length&&(await connections())===count,'reopen contacted host');
+ return loaded;
+}
+
+export async function gardenBefore(baseline){
+ await openNewsletter(baseline?'garden':'unavailable',baseline);
  if(!baseline){
-  await open('unavailable');
   const unsupported=reader().querySelector('.formatted-mail');
-  assert(unsupported&&unsupported.querySelectorAll('.mail-image-placeholder').length===5&&!reader().querySelector('.image-controls'),'image-only fallback missing or offered consent: '+reader().textContent);
-  assert(unsupported.textContent.includes('Inline image is not displayed')&&unsupported.textContent.includes('srcset')&&unsupported.textContent.includes('Image source is not supported')&&!unsupported.textContent.includes('Remote image'),'unsupported images mislabeled');
+  assert(unsupported&&unsupported.querySelectorAll('.mail-image-placeholder').length===2&&!reader().querySelector('.image-controls'),'image-only fallback missing or offered consent: '+reader().textContent);
+  assert(unsupported.textContent.includes('Inline image is not displayed')&&unsupported.textContent.includes('srcset')&&reader().querySelector('.image-source-summary')?.textContent==='3 images have unsupported sources.'&&!unsupported.textContent.includes('Remote image'),'unsupported images mislabeled');
   click('← Back to list');
+  await open('garden');
  }
- await open('garden');
  const body=reader().querySelector('.formatted-mail'),controls=reader().querySelector('.image-controls');
  const control=button(baseline?'Load images for this message':'Load remote images');
  assert(control&&body?.querySelector('h1')?.textContent==='Make room for winter birds','fixture not visible');
  assert(!body.querySelector('a,img,iframe,style,link,[src],[srcset],[href],[style]'),'non-inert newsletter');
  assert(reader().querySelector('details pre')?.textContent.trim().startsWith('Field Notes:'),'lost original text alternative');
  if(!baseline){
-  assert(controls.nextElementSibling===body&&control.classList.contains('primary')&&control.getBoundingClientRect().bottom<body.getBoundingClientRect().top,'action not prominent above message');
+  assert(control.classList.contains('primary')&&controls.getBoundingClientRect().bottom<body.getBoundingClientRect().top,'action not prominent above message');
   assert(body.querySelector('table[role=presentation][width="640"]')&&body.querySelector('caption')?.textContent==='November checklist'&&body.querySelector('th').colSpan===2,'newsletter table semantics lost');
   assert(body.textContent.includes('Inline image is not displayed — Club logo')&&body.textContent.includes('Remote image blocked — Winter garden banner'),'inline and remote states conflated');
   assert(body.scrollWidth<=body.clientWidth+1&&document.documentElement.scrollWidth<=innerWidth,'newsletter overflows');

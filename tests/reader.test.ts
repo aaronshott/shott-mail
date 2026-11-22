@@ -33,3 +33,12 @@ test('reject obvious non-public initial image URLs and the app hostname without 
  }
  assert.equal(imageURL('https://images.example.test/a?edition=3#fragment','reader.example.test'),'https://images.example.test/a?edition=3');
 });
+
+test('new img sources keep the existing restrictions and valid src wins',async()=>{
+ const host='reader.example.test',origin='https://images.example.test';
+ const blocked=['http://images.example.test/x','https://u:p@images.example.test/x','https://127.1/x','https://[::1]/x','https://media.internal/x',`https://${host}:8443/x`,'https://images.example.test/'+ 'x'.repeat(2048)];
+ const pics=blocked.map(url=>`<img src="${url.replace(/^https:/,'')}" data-src="${url}">`).join('');
+ const parsed=await parseMessage(html(`${pics}<img src="///images.example.test/x"><img data-src="//images.example.test/x"><img srcset="${origin}/variant.png 2x"><img data-original="${origin}/other.png"><img src="https://${host}/x" data-src="${origin}/fallback.png?v=%2B"><img src="${origin}/direct.png?b=2&amp;a=1#drop" data-src="${origin}/unused.png">`),host);
+ assert.deepEqual(parsed.formatted?.images,[`${origin}/fallback.png?v=%2B`,`${origin}/direct.png?b=2&a=1`]);
+ assert.doesNotMatch(parsed.formatted!.markup,/data-src|srcset=|data-original/);
+});
