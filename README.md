@@ -247,8 +247,35 @@ als bewijs; een scriptbestand of `compose config` is geen PASS.
   en SQLITE_BUSY_MS. Geen door Aäron vastgestelde normen. Configureer bodylimiet
   ruim genoeg voor JSON/UTF-8 boven de maximale conceptlengte; server weigert te
   grote aanvragen zonder het opgeslagen concept te overschrijven.
-- Safe HTML laat alleen eenvoudige opmaak zonder attributen door; sandbox-iframe,
-  CSP, geen scripts/afbeeldingen/links/remote CSS. Geen willekeurige URL/filefetch.
+- Binnenkomende mail staat per gebruiker standaard op platte tekst. Onder
+  Instellingen kan de gebruiker Veilige HTML kiezen (NL/EN); zonder bruikbare
+  HTML blijft de platte tekst zichtbaar. De lezer bouwt alleen eenvoudige opmaak
+  op uit een gesaneerde, inerte tussenrepresentatie; geen interactieve links,
+  formulieren, scripts of meegestuurde opmaakregels/attributen.
+- Externe afbeeldingen staan uit tot een expliciete klik/tik in het geopende
+  bericht. Er zijn daarvoor geen actieve beeld-URLs of prefetch-hints. De
+  toestemming vervalt bij sluiten, navigeren, accountwissel of heropenen en
+  wordt niet opgeslagen. Na toestemming laadt de browser de beelden rechtstreeks
+  als HTTPS-afbeeldingen, zonder referrer of serverproxy en zonder CORS-eis.
+  Ook normale HTTPS-redirects zijn mogelijk. De beeldhost ziet het IP-adres
+  en kan bezoekers herkennen aan bijvoorbeeld een unieke URL.
+- De beeldframes bevatten alleen een door de app opgebouwde afbeelding en vaste
+  opmaak. De sandbox staat geen scripts, same-origin-toegang, formulieren of
+  pop-ups toe. De app voegt geen sessiegegevens, CSRF-token, IMAP/SMTP-inlog of
+  Authorization-header toe. App-cookies blijven HttpOnly en SameSite=Strict
+  (Secure via de bestaande HTTPS-configuratie). `credentialless` biedt extra
+  compartimentering waar ondersteund; het is geen universele `credentials: omit`.
+  Browserbeleid bepaalt of bijvoorbeeld cookies van de beeldhost of eerder
+  opgeslagen browserauthenticatie meegaan. Sluiten trekt reeds verstuurde
+  aanvragen niet in en wist geen browsercache.
+- De eerste URL wordt alleen syntactisch getoetst: geen URL-inlog, letterlijke
+  IP-adressen, bekende interne naamuitgangen, enkelvoudige hostnamen of de
+  eigen app-hostnaam. Dit is geen publiek-netwerkgrens: de app kan geen
+  DNS-antwoord, netwerkroute of redirectbestemming vooraf valideren. Browser-
+  en netwerkbeleid kunnen extra blokkades opleggen. De app limiteert het aantal
+  beeldframes, maar voert geen controle op bestandstype, bytes of decodeerkosten
+  uit. De bovenliggende CSP staat HTTPS-beelden toe zodat de frames ze kunnen
+  erven; de sandbox en de eigen CSP van elk frame blijven apart gelden.
 - Versturen: concept eerst persistent opslaan, operation-id vergrendelen, daarna
   netwerk. Een herhaalde POST voert niet opnieuw SMTP uit. Na DATA-fout/herstart
   wordt resultaat conservatief `outcome_unknown`. Nooit automatisch hersturen.

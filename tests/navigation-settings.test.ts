@@ -20,17 +20,26 @@ test('preferences are authenticated, validated, isolated and persistent',async()
  try{
   // Simulate opening an existing schema-10 installation without preferences.
   await app.close();
-  const db=new DatabaseSync(c.dbPath);db.exec('DROP TABLE user_preferences');db.close();
+  let db=new DatabaseSync(c.dbPath);db.exec('DROP TABLE user_preferences');db.close();
   app=await buildApp(c);
-  const url='/api/preferences', defaults={language:'nl',theme:'system'}, chosen={language:'en',theme:'dark'};
+  const url='/api/preferences', defaults={language:'nl',theme:'system',readerFormat:'plain'}, chosen={language:'en',theme:'dark',readerFormat:'html'};
   assert.equal((await app.inject(url)).statusCode,401);
   const admin=await login('admin');
   assert.deepEqual((await app.inject({url,headers:admin})).json(),defaults);
+  // Simulate the exact previous preferences layout, with non-default choices.
+  await app.close();
+  db=new DatabaseSync(c.dbPath);
+  if(db.prepare("SELECT name FROM pragma_table_info('user_preferences') WHERE name='reader_format'").get())db.exec('ALTER TABLE user_preferences DROP COLUMN reader_format');
+  db.exec("INSERT INTO user_preferences (user_id,language,theme) VALUES (1,'en','dark')");db.close();
+  app=await buildApp(c);
+  assert.deepEqual((await app.inject({url,headers:admin})).json(),{...chosen,readerFormat:'plain'});
   assert.equal((await app.inject({method:'POST',url:'/api/admin/users',headers:admin,payload:{login:'other',password}})).statusCode,201);
   assert.equal((await app.inject({method:'PUT',url,headers:{...admin,'x-csrf-token':'wrong'},payload:chosen})).statusCode,403);
   assert.equal((await app.inject({method:'PUT',url,headers:admin,payload:{...chosen,userId:2}})).statusCode,400);
   assert.equal((await app.inject({method:'PUT',url,headers:admin,payload:{...chosen,theme:'purple'}})).statusCode,400);
+  assert.equal((await app.inject({method:'PUT',url,headers:admin,payload:{...chosen,readerFormat:'raw'}})).statusCode,400);
   assert.deepEqual((await app.inject({method:'PUT',url,headers:admin,payload:chosen})).json(),chosen);
+  assert.deepEqual((await app.inject({method:'PUT',url,headers:admin,payload:{language:'en',theme:'dark'}})).json(),chosen);
   const other=await login('other');
   assert.deepEqual((await app.inject({url,headers:other})).json(),defaults);
   await app.close(); app=await buildApp(c);

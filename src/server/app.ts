@@ -9,6 +9,7 @@ import {routes} from './routes.ts';
 import {inboxRoutes} from './inbox.ts';
 import staticPlugin from '@fastify/static';
 import {existsSync} from 'node:fs';
+import {imageStyleHash} from '../image-frame.ts';
 
 import type {MailPolicy} from './mail-policy.ts';
 export type Config=MailPolicy & {dbPath:string;key:Buffer;password:string;origin:string;secureCookie:boolean;sessionMs:number;staticRoot:string;dir?:string;loginAttempts?:number;bodyLimit?:number;sqliteBusyMs?:number};
@@ -18,7 +19,8 @@ const digest=(s:string)=>createHash('sha256').update(s).digest('hex');
 const loginName=z.string().trim().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/).transform(s=>s.toLowerCase());
 const loginBody=z.object({login:loginName,password:z.string().max(1024)}).strict();
 const userBody=z.object({login:loginName,password:z.string().min(16).max(1024)}).strict();
-const preferences=z.object({language:z.enum(['nl','en']),theme:z.enum(['system','light','dark'])}).strict();
+const preferences=z.object({language:z.enum(['nl','en']),theme:z.enum(['system','light','dark']),readerFormat:z.enum(['plain','html'])}).strict();
+const preferenceUpdate=preferences.partial({readerFormat:true});
 const publicPrincipal=({login,role,csrf}:Principal)=>({login,role,csrf});
 
 export async function buildApp(c:Config){
@@ -34,7 +36,9 @@ export async function buildApp(c:Config){
  let loginCount=0,windowStart=Date.now(); let hashing=false;
  app.addHook('onRequest',async(req,reply)=>{
   reply.header('Cache-Control','no-store').header('X-Content-Type-Options','nosniff').header('Referrer-Policy','no-referrer');
-  reply.header('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
+  // srcdoc inherits img-src and style-src; frame-src still denies URL-based frames.
+  reply.header('Content-Security-Policy',`default-src 'self'; script-src 'self'; style-src 'self' ${imageStyleHash}; img-src 'self' https:; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`);
+  reply.header('X-DNS-Prefetch-Control','off');
   if(!req.routeOptions.url?.startsWith('/api/'))return;
   if(req.method!=='GET'&&req.method!=='HEAD'&&req.headers.origin!==c.origin)return reply.code(403).send({error:'ORIGIN'});
   if(req.method==='POST'&&req.routeOptions.url==='/api/login')return;
@@ -71,16 +75,15 @@ export async function buildApp(c:Config){
  });
  app.get('/api/session',async req=>publicPrincipal(req.principal!));
  app.get('/api/preferences',async req=>{
-  const saved=db.prepare('SELECT language,theme FROM user_preferences WHERE user_id=?').get(req.principal!.userId);
+  const saved=db.prepare('SELECT language,theme,reader_format AS readerFormat FROM user_preferences WHERE user_id=?').get(req.principal!.userId);
   const result=preferences.safeParse(saved&&{...saved});
-  return result.success?result.data:{language:'nl',theme:'system'};
+  return result.success?result.data:{language:'nl',theme:'system',readerFormat:'plain'};
  });
  app.put('/api/preferences',async req=>{
-  const value=preferences.parse(req.body);
-  db.prepare(`INSERT INTO user_preferences(user_id,language,theme) VALUES (?,?,?)
-   ON CONFLICT(user_id) DO UPDATE SET language=excluded.language,theme=excluded.theme`)
-   .run(req.principal!.userId,value.language,value.theme);
-  return value;
+  const {language,theme,readerFormat}=preferenceUpdate.parse(req.body);
+  return db.prepare(`INSERT INTO user_preferences(user_id,language,theme,reader_format) VALUES (?,?,?,coalesce(?,'plain'))
+   ON CONFLICT(user_id) DO UPDATE SET language=excluded.language,theme=excluded.theme,reader_format=coalesce(?,reader_format)
+   RETURNING language,theme,reader_format AS readerFormat`).get(req.principal!.userId,language,theme,readerFormat??null,readerFormat??null);
  });
  app.post('/api/logout',async(req,reply)=>{
   db.prepare('DELETE FROM user_sessions WHERE id=? AND user_id=?').run(digest(req.cookies[cookieName]!),req.principal!.userId);

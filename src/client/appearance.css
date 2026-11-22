@@ -1,4 +1,4 @@
-/* Application chrome only; the sandboxed mail document is not restyled. */
+/* Application chrome and constrained, inert mail formatting. */
 :root{color-scheme:light;--surface:#fff;--sidebar:#f5f7f3;--badge:#f3f5f2;--line:#85968e;--link:#265748;--focus:#865600;--primary-hover:#1b483a;--danger-bg:#fff0eb;--danger-ink:#7a2d22;--danger-line:#bb7263}
 :root[data-theme="dark"]{color-scheme:dark;--surface:#17241f;--sidebar:#1c2d26;--badge:#253a31;--ink:#eef6f0;--muted:#bdcfc6;--line:#829b8e;--pale:#2e463b;--green:#28614e;--link:#a5e0c4;--focus:#ffd184;--primary-hover:#2e6d58;--danger-bg:#45291f;--danger-ink:#ffd2c4;--danger-line:#d89580}
 @media(prefers-color-scheme:dark){
@@ -19,16 +19,22 @@ a{color:var(--link)}
 #mailbox-nav button[aria-current="page"]{background:var(--pale);border-inline-start:4px solid var(--link);font-weight:650}
 .folder-section{display:grid;gap:6px;margin-block:8px}
 .folder-heading{font-weight:650}
-.account-folders>summary{min-height:44px;padding:8px;cursor:pointer;overflow-wrap:anywhere;border:1px solid var(--line);border-radius:8px}
+.account-folders>summary{min-height:44px;padding:8px;cursor:pointer;overflow-wrap:anywhere}
 .account-folders[open]>summary{background:var(--pale);margin-bottom:5px}
 .account-folders>button{width:100%}
 .folder-list{padding:0;margin:5px 0;list-style:none}
-.folder-list.indent{padding-inline-start:6px;border-inline-start:1px solid var(--line)}
+.folder-list.indent{padding-inline-start:8px}
 .folder-row{display:flex;gap:3px;align-items:stretch;margin-block:3px}
 .folder-toggle{flex:0 0 44px;padding:0;text-align:center!important}
 .folder-label,.folder-select{flex:1;min-width:0;padding:7px 6px;overflow-wrap:anywhere}
 .account-folders small{display:block;color:var(--muted);overflow-wrap:anywhere}
 .mail time{font-size:.85rem;color:var(--muted)}
+.formatted-mail{overflow-wrap:anywhere;overflow:auto;min-width:0}
+.formatted-mail iframe{display:block;inline-size:100%;block-size:12rem;border:0}
+.formatted-mail table{border-collapse:collapse}
+.formatted-mail :is(td,th){border:1px solid var(--line);padding:.3em}
+.image-controls{margin-block:1em}
+.image-controls [role=status]:empty{display:none}
 @media(max-width:760px){
  .mobile-nav-toggle{display:inline-block}
  #mailbox-nav:not(.mobile-open){display:none}

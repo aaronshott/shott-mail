@@ -4,8 +4,8 @@ import {createServer} from 'node:net';
 import {randomBytes} from 'node:crypto';
 
 test('mail rendering strips scripts, styles, remote loads and active links',async()=>{
- const m=await import('../src/server/mail.ts').catch(()=>null);assert.equal(typeof m?.safeHtml,'function');
- const html=m!.safeHtml('<p>Hello</p><script>alert(1)</script><img src="https://tracker.invalid/x"><svg onload="x()"></svg><a href="javascript:x()">x</a><style>body{background:url(https://tracker.invalid)}</style>');
+ const {formatBody}=await import('../src/server/format-body.ts');
+ const html=formatBody('<p>Hello</p><script>alert(1)</script><img src="https://tracker.invalid/x"><svg onload="x()"></svg><a href="javascript:x()">x</a><style>body{background:url(https://tracker.invalid)}</style>')!.markup;
  assert.ok(html.includes('<p>Hello</p>'));assert.equal(/script|<img|<svg|href=|<style|tracker.invalid/i.test(html),false);
 });
 test('disallowed mail endpoint refuses before network; absent STARTTLS never sends credentials',async()=>{

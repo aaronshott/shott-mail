@@ -3,6 +3,7 @@
  import EndpointFields from './EndpointFields.svelte';
  import SentSettings from './SentSettings.svelte';
  import FolderNavigation from './FolderNavigation.svelte';
+ import FormattedMail from './FormattedMail.svelte';
  import {accountFilter} from './navigation.js';
  import {translate,hasMessage,UiError} from './i18n.js';
  let maxDraftChars=200000,mailMode='disabled';
@@ -10,7 +11,7 @@
  let loginName='',role='',identity='',users=[],newLogin='',newPassword='';
  let activeFolder=null,folderIndex=0,folderValidity='',filingNotice='',observation='';
  let explicitAccount=null,folderEpochs={},mobileNav=false,navToggle,lastReadButton;
- let language='nl',theme='system',preferenceForm,returnView='inbox';
+ let language='nl',theme='system',readerFormat='plain',preferenceForm,returnView='inbox';
  $: t=translate.bind(null,language);
  $: locale=language==='en'?'en-GB':'nl-NL';
  $: numbers=new Intl.NumberFormat(locale);
@@ -70,24 +71,24 @@
  });}
  function clearWorkspace(keepEditor=false){
   accounts=[];messages=[];drafts=[];reader=null;settings=null;users=[];newLogin='';newPassword='';filter='all';explicitAccount=null;page=0;hasMore=false;notice='';activeFolder=null;folderValidity='';filingNotice='';observation='';folderEpochs={};mobileNav=false;lastReadButton=null;
-  language='nl';theme='system';preferenceForm=null;returnView='inbox';
+  language='nl';theme='system';readerFormat='plain';preferenceForm=null;returnView='inbox';
   if(!keepEditor){editor=null;dirty=false;}enter(editor?'compose':'inbox');
  }
  function activate(r){if(identity!==r.login)clearWorkspace();identity=r.login;loginName=r.login;role=r.role;csrf=r.csrf;logged=true;}
  async function loadWorkspace(){
   const session=csrf;let preferenceError;
-  try{const saved=await api('/api/preferences');if(logged&&csrf===session)({language,theme}=saved);}
+  try{const saved=await api('/api/preferences');if(logged&&csrf===session)({language,theme,readerFormat}=saved);}
   catch(e){if(!logged||csrf!==session)throw e;preferenceError=e;}
   await refresh();if(preferenceError)throw preferenceError;
  }
  function openPreferences(){
   if(view==='preferences')return;
-  preferenceForm={language,theme};returnView=view;notice='';return goView('preferences');
+  preferenceForm={language,theme,readerFormat};returnView=view;notice='';return goView('preferences');
  }
  async function savePreferences(){await action(async()=>{
   const session=csrf;
   const saved=await api('/api/preferences','PUT',preferenceForm);
-  if(logged&&csrf===session){({language,theme}=saved);notice='preferencesSaved';}
+  if(logged&&csrf===session){({language,theme,readerFormat}=saved);notice='preferencesSaved';}
  });}
  function closePreferences(){
   if(returnView==='inbox'&&!messages.length)return goInbox();
@@ -185,6 +186,7 @@
  }
  async function openMail(m,button){await action(()=>inNavigation(async current=>{
   if(!messages.includes(m)||m.source.owner!==identity||m.source.session!==csrf)return;
+  reader=null;
   const loaded=await api(m.source.url);
   if(!current()||!messages.includes(m))return;
   lastReadButton=button;reader=loaded;await tick();if(current()&&reader===loaded)document.getElementById('readtitle')?.focus();
@@ -289,7 +291,7 @@
       {#if view==='folder'}<p class="tag"><bdi>{accounts.find(a=>a.id===activeFolder.account)?.label}</bdi></p>{/if}
       <div role="status">{#if notice===acceptedNotice}<p>{t(notice)}</p>{/if}</div>
       {#if notice===acceptedNotice}<p role="status">{t(filingNotice)}</p>{/if}
-      <button onclick={()=>view==='folder'?action(()=>folderPage(activeFolder,0)):action(refresh)} disabled={busy}>{t('refresh')}</button>
+      <button onclick={()=>action(async()=>{reader=null;if(view==='folder')await folderPage(activeFolder,0);else await refresh();})} disabled={busy}>{t('refresh')}</button>
       <p>{t('page',{page:numbers.format(currentPage+1)})}</p>
      </div>
      {#each messages as m (m)}
@@ -307,9 +309,8 @@
      {#if reader}
       <button onclick={closeReader}>{t('backToList')}</button><span class="tag">{reader.accountLabel} · {reader.address}</span>
       <h2 id="readtitle" tabindex="-1">{reader.subjectMissing?t('noSubject'):reader.subject}</h2><p>{reader.from}</p><p class="note">{t('safeView')}</p>
-      {#if reader.html}
-       <iframe title={t('safeBody')} sandbox="" srcdoc={'<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src &#39;none&#39;; form-action &#39;none&#39;; base-uri &#39;none&#39;"><meta charset="utf-8">'+reader.html}></iframe>
-       <details><summary>{t('textView')}</summary><pre>{reader.text}</pre></details>
+      {#if readerFormat==='html'&&reader.formatted}
+       {#key reader}<FormattedMail body={reader.formatted} text={reader.text} {t}/>{/key}
       {:else}<pre>{reader.text}</pre>{/if}
       {#if reader.attachments.length}<p>{t('attachments')}</p>{/if}
       <button class="primary" onclick={()=>newDraft(reader)} disabled={!!editor&&dirty}>{t('reply')}</button>
@@ -353,6 +354,9 @@
       <label>{t('language')}<select bind:value={preferenceForm.language} disabled={busy}><option value="nl" lang="nl">Nederlands</option><option value="en" lang="en">English</option></select></label>
       <label>{t('theme')}<select bind:value={preferenceForm.theme} disabled={busy}>
        <option value="system">{t('system')}</option><option value="light">{t('light')}</option><option value="dark">{t('dark')}</option>
+      </select></label>
+      <label>{t('readerFormat')}<select bind:value={preferenceForm.readerFormat} disabled={busy}>
+       <option value="plain">{t('plainDefault')}</option><option value="html">{t('safeHtmlPreference')}</option>
       </select></label>
       <div class="actions"><button class="primary" disabled={busy}>{t('savePreferences')}</button><button type="button" onclick={closePreferences} disabled={busy}>{t('back')}</button></div>
      </form>

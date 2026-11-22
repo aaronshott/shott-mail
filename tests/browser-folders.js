@@ -28,8 +28,7 @@ export async function runFolders(){
  pick('INBOX/Projects/旅行');await idle();assert(heading()==='INBOX/Projects/旅行'&&report().includes('Nested 2'),'wrong folder');
  click('Oudere');await idle();assert(report().includes('Nested 1')&&!report().includes('Nested 2'),'wrong page');
  document.querySelector('.list .mail').click();await idle();
- const iframe=document.querySelector('.reader iframe');
- assert(iframe?.hasAttribute('sandbox')&&iframe.srcdoc.includes('Nested body 1')&&!iframe.srcdoc.includes('<script')&&!iframe.srcdoc.includes('https://example.test/no'),'incorrect UID read or unsafe HTML');layout();
+ assert(document.querySelector('.reader pre')?.textContent.includes('Nested body 1')&&!document.querySelector('.reader :is(iframe,img,.image-controls)'),'incorrect UID read or plain default');layout();
  click('← Terug naar lijst');click('Nieuwere');await idle();assert(report().includes('Nested 2'),'newer page missing');
  checks.push('unified inbox; nested unsubscribed folder and navigation-only parent; pagination; sanitized read; layout');
  click('Accounts');await idle();click('Werk');await idle();
