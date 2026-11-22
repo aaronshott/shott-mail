@@ -259,12 +259,12 @@ als bewijs; een scriptbestand of `compose config` is geen PASS.
   grote aanvragen zonder het opgeslagen concept te overschrijven.
 - Binnenkomende mail staat per gebruiker standaard op platte tekst. Onder
   Instellingen kan de gebruiker Veilige HTML kiezen (NL/EN); zonder bruikbare
-  HTML blijft de platte tekst zichtbaar. De lezer bouwt alleen eenvoudige opmaak
-  op uit een gesaneerde, inerte tussenrepresentatie. Koppen, tekst, lijsten,
-  citaten en tabellen krijgen app-opmaak; begrensde tabelbreedtes en celspans
-  blijven behouden. Een als presentatietabel gemarkeerde tabel krijgt geen
-  dataraster. Links zijn tekst; er zijn geen formulieren, scripts, meegestuurde
-  CSS, achtergronden of andere actieve onderdelen.
+  HTML blijft de platte tekst zichtbaar. De lezer reconstrueert begrensde hints
+  voor onder meer effen kleuren, systeemlettertypen, afmetingen, witruimte en
+  uitlijning. Datatabellen behouden celspans; gemarkeerde presentatietabellen
+  met één rij en twee of drie gewone cellen stapelen in een smalle lezer.
+  Een CTA kan eruitzien zoals bedoeld, maar blijft niet-klikbare tekst. Geen
+  formulieren, scripts, stijlbladen, webfonts, achtergrondbeelden of actieve links.
 - Externe afbeeldingen staan uit tot een expliciete klik/tik in het geopende
   bericht. Er zijn daarvoor geen actieve beeld-URLs of prefetch-hints. De
   toestemming vervalt bij sluiten, navigeren, accountwissel of heropenen en
@@ -272,13 +272,15 @@ als bewijs; een scriptbestand of `compose config` is geen PASS.
   als HTTPS-afbeeldingen, zonder referrer of serverproxy en zonder CORS-eis.
   Ook normale HTTPS-redirects zijn mogelijk. De beeldhost ziet het IP-adres
   en kan bezoekers herkennen aan bijvoorbeeld een unieke URL.
-- Alleen toegestane absolute HTTPS-waarden uit `img src` komen in aanmerking
-  (maximaal 16 beelden per weergave). `srcset` en `picture`-varianten worden
-  niet opgehaald; bij `picture` kan de gewone `img src`-fallback wel werken.
-  Ingesloten CID-afbeeldingen, data-URLs, HTTP en relatieve bronnen worden niet
-  weergegeven. De lezer toont waarom, met de beschrijving indien aanwezig. Een
-  aangevraagd beeld kan alsnog mislukken; de sandbox laat de browser dan de
-  beschrijving tonen en de app meldt alleen dat de beelden zijn aangevraagd.
+- De lezer probeert `img src`, daarna `data-src`, daarna één kandidaat uit een
+  begrensde, volledig gevalideerde `img srcset` (kleinste descriptor, geen
+  `sizes` of `picture source`). Absolute HTTP- en protocolrelatieve bronnen
+  worden uitsluitend als HTTPS geprobeerd; er is geen terugval naar HTTP.
+  Maximaal 48 beeldposities en 48 unieke beeldbestemmingen per weergave.
+  CID, data-URLs en padrelatieve URL's worden niet weergegeven. Uitklapbare
+  details tonen alleen aantallen per reden. Aangevraagde beelden kunnen
+  alsnog mislukken; de browser toont zo mogelijk een gebroken beeld en de
+  beschrijving. De app leest de sandbox niet uit en telt geen laadfouten.
 - De beeldframes bevatten alleen een door de app opgebouwde afbeelding en vaste
   opmaak. De sandbox staat geen scripts, same-origin-toegang, formulieren of
   pop-ups toe. De app voegt geen sessiegegevens, CSRF-token, IMAP/SMTP-inlog of

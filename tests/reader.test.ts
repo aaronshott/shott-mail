@@ -21,7 +21,7 @@ test('only real HTML body becomes inert structured content; preserve the plain a
 
 test('allowlisted formatting and explicit HTTPS image candidates only',async()=>{
  const parsed=await parseMessage(html('<p><a href="https://example.test/news">News</a> <img src="https://images.example.test/p.png?a=1&amp;b=2" srcset="https://example.test/large.png 2x" alt="Photo"> <img src="/logo.png" alt="Logo"></p><form><label>Search <input name="q"></label></form>'));
- assert.deepEqual(parsed.formatted,{markup:'<p>News <mail-image data-index="0">Photo</mail-image> <mail-image data-reason="source">Logo</mail-image></p>',images:['https://images.example.test/p.png?a=1&b=2']});
+ assert.deepEqual(parsed.formatted,{markup:'<p><span>News</span> <mail-image data-index="0">Photo</mail-image> <mail-image data-reason="source">Logo</mail-image></p>',images:['https://images.example.test/p.png?a=1&b=2']});
  assert.ok(parsed.text.includes('News'));
  assert.equal((await parseMessage(html('<div> </div>'))).formatted,null);
  assert.equal((await parseMessage(html('<blockquote>'.repeat(70)+'deep'+'</blockquote'.repeat(70)))).formatted,null);
@@ -36,9 +36,9 @@ test('reject obvious non-public initial image URLs and the app hostname without 
 
 test('new img sources keep the existing restrictions and valid src wins',async()=>{
  const host='reader.example.test',origin='https://images.example.test';
- const blocked=['http://images.example.test/x','https://u:p@images.example.test/x','https://127.1/x','https://[::1]/x','https://media.internal/x',`https://${host}:8443/x`,'https://images.example.test/'+ 'x'.repeat(2048)];
+ const blocked=['http://media.internal/x','https://u:p@images.example.test/x','https://127.1/x','https://[::1]/x','https://media.internal/x',`https://${host}:8443/x`,'https://images.example.test/'+ 'x'.repeat(2048)];
  const pics=blocked.map(url=>`<img src="${url.replace(/^https:/,'')}" data-src="${url}">`).join('');
- const parsed=await parseMessage(html(`${pics}<img src="///images.example.test/x"><img data-src="//images.example.test/x"><img srcset="${origin}/variant.png 2x"><img data-original="${origin}/other.png"><img src="https://${host}/x" data-src="${origin}/fallback.png?v=%2B"><img src="${origin}/direct.png?b=2&amp;a=1#drop" data-src="${origin}/unused.png">`),host);
- assert.deepEqual(parsed.formatted?.images,[`${origin}/fallback.png?v=%2B`,`${origin}/direct.png?b=2&a=1`]);
+ const parsed=await parseMessage(html(`${pics}<img src="http://images.example.test/x"><img src="///images.example.test/x"><img data-src="//images.example.test/x"><img srcset="${origin}/variant.png 2x"><img data-original="${origin}/other.png"><img src="https://${host}/x" data-src="${origin}/fallback.png?v=%2B"><img src="${origin}/direct.png?b=2&amp;a=1#drop" data-src="${origin}/unused.png">`),host);
+ assert.deepEqual(parsed.formatted?.images,[`${origin}/x`,`${origin}/variant.png`,`${origin}/fallback.png?v=%2B`,`${origin}/direct.png?b=2&a=1`]);
  assert.doesNotMatch(parsed.formatted!.markup,/data-src|srcset=|data-original/);
 });

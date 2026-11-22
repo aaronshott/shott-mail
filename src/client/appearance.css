@@ -45,8 +45,11 @@ a{color:var(--link)}
 .account-folders :is(.folder-account,.folder-toggle,.folder-select):focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
 .account-folders small{display:block;color:var(--muted);overflow-wrap:anywhere}
 .mail time{font-size:.85rem;color:var(--muted)}
-.formatted-mail,.mail-text-view,.reader>.image-controls{max-inline-size:70ch}
-.formatted-mail{container-type:inline-size;overflow-wrap:anywhere;overflow:auto;min-inline-size:0;line-height:1.6}
+.mail-text-view,.reader>.image-controls{max-inline-size:70ch}
+.formatted-mail{max-inline-size:780px;container-type:inline-size;overflow-wrap:anywhere;overflow:auto;min-inline-size:0;line-height:1.6}
+.formatted-mail.mail-authored-palette{background:#fff;color:#202124}
+.formatted-mail :is(div,p,td,th,span,h1,h2,h3,h4,h5,h6,blockquote,ul,ol,pre,hr){box-sizing:border-box;max-inline-size:100%}
+.formatted-mail pre{white-space:pre-wrap}
 .formatted-mail :is(p,ul,ol,blockquote,pre,table){margin-block:.65em 1em}
 .formatted-mail :is(h1,h2,h3,h4,h5,h6){line-height:1.2;margin-block:.9em .35em}
 .formatted-mail h1{font-size:clamp(1.55rem,4cqi,2rem)}
@@ -58,9 +61,17 @@ a{color:var(--link)}
 .formatted-mail table:not([role=presentation])>:is(thead,tbody,tfoot)>tr>:is(td,th){border:1px solid var(--line);padding:.4em .55em;vertical-align:top}
 .formatted-mail table:not([role=presentation])>:is(thead,tbody,tfoot)>tr>th{background:var(--badge);text-align:start}
 .formatted-mail table[role=presentation]>:is(thead,tbody,tfoot)>tr>:is(td,th){padding:0;vertical-align:top}
+@container (max-width: 440px){
+ .formatted-mail .mail-stack-columns,.formatted-mail .mail-stack-columns>:is(thead,tbody,tfoot),
+ .formatted-mail .mail-stack-columns>:is(thead,tbody,tfoot)>tr{display:block}
+ .formatted-mail .mail-stack-columns>:is(thead,tbody,tfoot)>tr>td{display:block;width:100%!important}
+}
 .mail-image-placeholder{display:inline-block;max-inline-size:100%;padding:.15em .45em;margin-block:.15em;border-radius:.25em;background:var(--badge);color:var(--muted);font-size:.9em}
 .mail-image-frame,.formatted-mail iframe{display:block;inline-size:100%;min-inline-size:0}
 .formatted-mail iframe{block-size:clamp(5rem,24cqi,12rem);border:0}
+.formatted-mail .mail-image-sized{position:relative;min-block-size:1.5rem;max-block-size:28rem}
+.formatted-mail .mail-image-sized>iframe{position:absolute;inset:0;block-size:100%;background:transparent}
+.formatted-mail .mail-image-compact{display:inline-block;vertical-align:top;margin-block-end:4px}
 .mail-text-view{margin-block:1em}
 .image-controls{margin-block:1em;padding:.75em;border:1px solid var(--line);border-inline-start:4px solid var(--link);border-radius:.4em;background:var(--badge)}
 .image-controls .note{margin:.5em 0 0}

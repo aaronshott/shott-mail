@@ -75,7 +75,7 @@ export async function editionBefore(){
  const text=reader().textContent;
  assert(body.scrollWidth<=body.clientWidth+1&&document.documentElement.scrollWidth<=innerWidth,'newsletter overflows');
  return {...pre,point:control?gardenPoint():null,oldWarnings:(text.match(/Image source is not supported/g)??[]).length,
-  summary:reader().querySelector('.image-source-summary')?.textContent??null,
+  summary:reader().querySelector('.image-source-summary li')?.textContent??null,
   alt:['Orchard at dawn','Market stalls','Walking map','Community badge'].every(alt=>body.textContent.includes(alt))};
 }
 
@@ -94,15 +94,15 @@ export async function gardenBefore(baseline){
  await openNewsletter(baseline?'garden':'unavailable',baseline);
  if(!baseline){
   const unsupported=reader().querySelector('.formatted-mail');
-  assert(unsupported&&unsupported.querySelectorAll('.mail-image-placeholder').length===2&&!reader().querySelector('.image-controls'),'image-only fallback missing or offered consent: '+reader().textContent);
-  assert(unsupported.textContent.includes('Inline image is not displayed')&&unsupported.textContent.includes('srcset')&&reader().querySelector('.image-source-summary')?.textContent==='3 images have unsupported sources.'&&!unsupported.textContent.includes('Remote image'),'unsupported images mislabeled');
+  assert(unsupported&&unsupported.querySelectorAll('.mail-image-placeholder').length===1&&!reader().querySelector('.image-controls'),'image-only fallback missing or offered consent: '+reader().textContent);
+  assert(unsupported.textContent.includes('Inline image is not displayed')&&reader().querySelector('.image-source-summary li')?.textContent==='3 images have unsupported sources.'&&!unsupported.textContent.includes('Remote image'),'unsupported images mislabeled');
   click('← Back to list');
   await open('garden');
  }
  const body=reader().querySelector('.formatted-mail'),controls=reader().querySelector('.image-controls');
  const control=button(baseline?'Load images for this message':'Load remote images');
  assert(control&&body?.querySelector('h1')?.textContent==='Make room for winter birds','fixture not visible');
- assert(!body.querySelector('a,img,iframe,style,link,[src],[srcset],[href],[style]'),'non-inert newsletter');
+ assert(!body.querySelector('a,img,iframe,style,link,[src],[srcset],[href]'),'non-inert newsletter');
  assert(reader().querySelector('details pre')?.textContent.trim().startsWith('Field Notes:'),'lost original text alternative');
  if(!baseline){
   assert(control.classList.contains('primary')&&controls.getBoundingClientRect().bottom<body.getBoundingClientRect().top,'action not prominent above message');
@@ -118,6 +118,32 @@ export async function gardenBefore(baseline){
 function gardenPoint(){
  const control=reader().querySelector('.image-controls button');
  control.scrollIntoView({block:'nearest'});const box=control.getBoundingClientRect();return {x:box.x+box.width/2,y:box.y+box.height/2};
+}
+
+export async function studioBefore(){
+ await openNewsletter('studio');
+ const body=reader().querySelector('.formatted-mail');
+ const outer=body.querySelector('table'),[left,right]=outer.querySelector('table').rows[0].cells;
+ const cta=[...body.querySelectorAll('span,p')].find(n=>n.textContent.trim()==='Explore the edition'&&!n.children.length);
+ const control=button('Load remote images');control?.click();await pause(250);
+ const zero=(await requests()).length===0&&(await connections())===0;
+ assert(zero,'studio contacted image host before consent');
+ assert(!body.querySelector('a,button,img,iframe,link,form,[href],[src],[srcset]'),'studio activated sender markup');
+ const rect=n=>{const {x,y,width}=n.getBoundingClientRect();return {x,y,width};};
+ return {zero,point:control?gardenPoint():null,summary:reader().querySelector('.image-source-summary li,.image-source-summary:not(details)')?.textContent??null,
+  paper:getComputedStyle(outer).backgroundColor,ink:getComputedStyle(body.querySelector('h1')).color,
+  heading:getComputedStyle(body.querySelector('h1')).fontSize,font:getComputedStyle(outer).fontFamily,
+  padding:getComputedStyle(outer.rows[0].cells[0]).paddingTop,cta:cta?{fill:getComputedStyle(cta).backgroundColor,padding:getComputedStyle(cta).paddingLeft}:null,
+  left:rect(left),right:rect(right),overflow:body.scrollWidth>body.clientWidth+1||document.documentElement.scrollWidth>innerWidth};
+}
+
+export async function studioReset(){
+ const loaded=await requests(),count=await connections();
+ if(!document.querySelector('.list').getClientRects().length)click('← Back to list');
+ await open('missing');await pause(250);
+ assert(button('Load remote images')&&!reader().querySelector('iframe,img'),'studio consent carried over to next message');
+ assert((await requests()).length===loaded.length&&(await connections())===count,'next message contacted observer');
+ return loaded;
 }
 
 export async function gardenMissing(){

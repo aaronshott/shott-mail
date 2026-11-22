@@ -7,7 +7,7 @@ import {join,resolve} from 'node:path';
 import {runTreeStyle} from './browser-tree-style.mjs';
 import {editionImages} from './newsletter-fixture.ts';
 const chrome=process.argv[2];if(!chrome)throw Error('Pass an absolute Chrome/Chromium path');
-const workflows=process.argv.length>3?process.argv.slice(3):['folders','context','composer','b1','users','settings','reply-nl','reply-en','reader-nl','reader-en','newsletter','edition','tree-light','tree-dark'];
+const workflows=process.argv.length>3?process.argv.slice(3):['folders','context','composer','b1','users','settings','reply-nl','reply-en','reader-nl','reader-en','newsletter','edition','studio','tree-light','tree-dark'];
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 await mkdir('.test-data',{recursive:true,mode:0o700});
 const profile=await mkdtemp(resolve('.test-data/browser-chrome-'));
@@ -23,7 +23,7 @@ try{
   const record={kind,mobile};results.push(record);
   const replyLocale=kind==='reply-nl'?'nl':kind==='reply-en'?'en':null;
   const readerLocale=kind==='reader-nl'?'nl':kind==='reader-en'?'en':null;
-  const edition=kind==='edition',garden=kind==='newsletter'||edition,needsImage=readerLocale||garden;
+  const studio=kind==='studio',edition=kind==='edition',garden=kind==='newsletter'||edition||studio,needsImage=readerLocale||garden;
   const treeTheme=kind==='tree-light'?'light':kind==='tree-dark'?'dark':null;
   const h=start(process.execPath,['tests/browser-harness.ts',...(garden?['--newsletter']:readerLocale?['--reader']:replyLocale?['--reply-subjects']:kind==='context'?['--folders','--context']:treeTheme?['--folders','--tree-style']:kind==='settings'?['--folders']:['folders','composer'].includes(kind)?[`--${kind}`]:[])]);
   let origin,imageOrigin,tab,ws,harnessOutput='';h.stdout.on('data',chunk=>{harnessOutput+=chunk;const match=/BROWSER_HARNESS (http:\/\/127\.0\.0\.1:\d+)(?: (https:\/\/images\.example\.test:\d+))?\r?\n/.exec(harnessOutput);if(match)[,origin,imageOrigin]=match;});
@@ -72,11 +72,11 @@ try{
    else if(garden){
     const baseline=process.env.NEWSLETTER_BASELINE==='1',dir=process.env.NEWSLETTER_SCREENSHOTS;
     const run=(method,arg='')=>evaluate(`import('/__test_reader.js').then(m=>m.${method}(${arg}))`,true);
-    const shot=async name=>{
+    const shot=async (name,viewportOnly=false)=>{
      if(!dir)return;
      await mkdir(dir,{recursive:true});
      const {cssContentSize:{height}}=await call('Page.getLayoutMetrics');
-     const {data}=await call('Page.captureScreenshot',{format:'png',fromSurface:true,captureBeyondViewport:true,clip:{x:0,y:0,width:record.viewport[0],height,scale:1}});
+     const {data}=await call('Page.captureScreenshot',{format:'png',fromSurface:true,...(viewportOnly?{}:{captureBeyondViewport:true,clip:{x:0,y:0,width:record.viewport[0],height,scale:1}})});
      await writeFile(join(dir,`${name}-${mobile?'mobile':'desktop'}.png`),Buffer.from(data,'base64'));
     };
     const gesture=async point=>{
@@ -84,7 +84,33 @@ try{
      if(mobile){await call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point]});await call('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});}
      else for(const type of ['mousePressed','mouseReleased'])await call('Input.dispatchMouseEvent',{type,...point,button:'left',clickCount:1});
     };
-    if(edition){
+    if(studio){
+     record.before=await run('studioBefore');
+     if(observed.length)throw Error('CDP observed studio network before consent');
+     await shot(baseline?'studio-before':'studio-after-blocked');
+     const b=record.before;
+     if(baseline){
+      if(b.point||b.summary!=='23 images have unsupported sources.'||b.paper!=='rgba(0, 0, 0, 0)'||b.padding!=='0px'||b.cta?.fill!=='rgba(0, 0, 0, 0)')throw Error('Baseline does not match synthetic reproduction');
+     }else{
+      if(!b.point||b.summary||b.paper!=='rgb(245, 239, 227)'||b.ink!=='rgb(36, 51, 74)'||b.padding!=='16px'||b.heading!=='38px'||!b.font.includes('Georgia')||b.cta?.fill!=='rgb(135, 59, 48)'||b.cta.padding!=='24px'||b.overflow||
+       (mobile?b.left.x!==b.right.x||b.right.y<=b.left.y:b.right.x<=b.left.x||b.left.y!==b.right.y))throw Error('Studio design reference did not match');
+      await gesture(b.point);
+      record.decoded=await poll(async()=>{
+       const sessions=[...imageFrames.values()];if(sessions.length!==24)return;
+       const images=await Promise.all(sessions.map(session=>evaluate(`(() => {const i=document.querySelector('img');if(!i?.complete)return null;return {path:new URL(i.src).pathname,width:i.naturalWidth,height:i.naturalHeight};})()`,false,session)));
+       return images.every(i=>i?.width===640&&i.height===120)?images:null;
+      });
+      record.sizedFrames=await evaluate(`(() => [...document.querySelectorAll('.formatted-mail iframe')].map(f=>[f.clientWidth,f.clientHeight]))()`);
+      if(record.sizedFrames[0][0]<=0||record.sizedFrames.slice(1).some(([w,h])=>w!==128||h!==24))throw Error('Incorrect bounded image dimensions');
+      await evaluate("document.querySelector('.formatted-mail').scrollIntoView({block:'start'})");await delay(300);
+      await shot('studio-after-detail',true);
+      await shot('studio-after-loaded');
+      record.hostRequests=await run('studioReset');
+      const expected=['/studio.png',...Array.from({length:23},(_,i)=>`/tile-${i}.png`)].sort().join(',');
+      if(record.decoded.map(i=>i.path).sort().join(',')!==expected||record.hostRequests.map(r=>r.path).sort().join(',')!==expected||record.hostRequests.some(r=>r.referer||r.authorization))throw Error('Unexpected studio images or request metadata');
+     }
+     record.result={passed:true};
+    }else if(edition){
      record.before=await run('editionBefore');
      if(observed.length)throw Error('CDP observed edition network before consent');
      await shot(baseline?'edition-before':'edition-after-blocked');

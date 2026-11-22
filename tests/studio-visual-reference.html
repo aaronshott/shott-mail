@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Studio Post — offline design reference</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 18px; }
+article { max-width: 640px; margin: auto; padding: 16px; background: #f5efe3; color: #24334a; font: 16px/1.6 Georgia, serif; }
+.brand { color: #873b30; font-size: 14px; font-weight: bold; letter-spacing: 2px; }
+h1 { font-size: 38px; line-height: 1.2; }
+.intro { font-size: 18px; line-height: 1.5; }
+.palette { aspect-ratio: 16 / 3; background: linear-gradient(90deg, #1860a0 50%, #1c8a5b 50%); }
+.columns { display: grid; grid-template-columns: 1fr 1fr; margin-top: 10px; }
+.columns div { padding: 14px; background: #ffdfb0; }
+.columns div + div { background: #dfebcb; }
+.center { text-align: center; }
+.cta { display: inline-block; background: #873b30; color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold; }
+@media (max-width: 476px) { .columns { grid-template-columns: 1fr; } }
+</style>
+<article>
+ <p class="brand">THE STUDIO POST / 04</p>
+ <h1>Make room for colour</h1>
+ <p class="intro">A short edition about paper, pigments and the people making things with them.</p>
+ <div class="palette" role="img" aria-label="Two-color studio palette"></div>
+ <div class="columns"><div><strong>01 / Paper</strong><br>Try a warmer ground.</div><div><strong>02 / Ink</strong><br>Mix a quiet green.</div></div>
+ <p class="center"><span class="cta">Explore the edition</span></p>
+ <p>Past edition swatches</p>
+</article>
+<!-- Hand-written visual target; open as a local file. No app code, fonts or network.
+     Compare palette, hierarchy, width/padding, CTA treatment and column order;
+     not a pixel-perfect screenshot oracle for app chrome or typography metrics. -->
+</html>

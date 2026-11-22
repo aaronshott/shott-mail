@@ -12,7 +12,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY src/server ./src/server
-COPY src/sent-policy.ts src/reader-policy.ts src/image-frame.ts ./src/
+COPY src/sent-policy.ts src/reader-policy.ts src/reader-presentation.ts src/image-frame.ts ./src/
 COPY scripts ./scripts
 COPY tests/protocol-acceptance.ts ./tests/protocol-acceptance.ts
 COPY LICENSE README.md THIRD_PARTY_NOTICES.txt .env.example ./
