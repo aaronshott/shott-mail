@@ -13,7 +13,8 @@
     "build": "vite build && node scripts/copy-license.mjs",
     "start": "node src/server/main.ts",
     "setup": "node scripts/setup.mjs",
-    "test:protocol": "node tests/protocol-acceptance.ts"
+    "test:protocol": "node tests/protocol-acceptance.ts",
+    "test:runtime": "node tests/runtime-smoke.mjs"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.5",

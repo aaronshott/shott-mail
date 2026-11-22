@@ -1,0 +1,103 @@
+// Staged runtime smoke test for hosts without Docker. Run npm run build first.
+import assert from 'node:assert/strict';
+import {execFileSync, spawn} from 'node:child_process';
+import {randomBytes} from 'node:crypto';
+import {once} from 'node:events';
+import {cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {createServer} from 'node:net';
+import {tmpdir} from 'node:os';
+import {dirname, join, resolve} from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
+import {setTimeout as delay} from 'node:timers/promises';
+import {fileURLToPath, pathToFileURL} from 'node:url';
+
+const root = fileURLToPath(new URL('../', import.meta.url));
+const lines = readFileSync(join(root, 'Dockerfile'), 'utf8').split(/\r?\n/);
+const stage = lines.slice(lines.findLastIndex(line => /^FROM\s/.test(line)) + 1);
+const runtime = mkdtempSync(join(tmpdir(), 'shott-mail-runtime-'));
+let server;
+try {
+  // Mirror the current final-stage COPY forms, not a separate list of TS files.
+  for (const line of stage.filter(line => /^COPY\s/.test(line))) {
+    const parts = line.trim().split(/\s+/).slice(1);
+    const dest = parts.pop();
+    const fromBuild = parts[0] === '--from=build';
+    if (fromBuild) parts.shift();
+    assert.ok(dest?.startsWith('./') && parts.length > 0, `Unsupported COPY: ${line}`);
+    assert.ok(parts.length === 1 || dest.endsWith('/'), `Unsupported COPY: ${line}`);
+    for (const src of parts) {
+      assert.match(src, fromBuild ? /^\/app\/[\w./-]+$/ : /^[\w./-]+$/, `Unsupported COPY: ${line}`);
+      const target = join(runtime, dest, ...(dest.endsWith('/') ? [src.split('/').at(-1)] : []));
+      mkdirSync(dirname(target), {recursive: true});
+      cpSync(join(root, fromBuild ? src.slice('/app/'.length) : src), target, {recursive: true});
+    }
+  }
+  const install = stage.find(line => /^RUN npm ci /.test(line))?.match(/^RUN npm ci (.+) && npm cache clean --force$/);
+  assert.ok(install, 'Update staging to match the Dockerfile runtime npm install');
+  const installFlags = install[1].split(/\s+/);
+  assert.deepEqual(installFlags, ['--omit=dev', '--ignore-scripts']);
+  execFileSync('npm', ['ci', ...installFlags, '--offline', '--no-audit', '--no-fund'], {cwd: runtime, stdio: 'inherit'});
+
+  const dbPath = join(runtime, 'data', 'app.sqlite');
+  const key = randomBytes(32);
+  const password = randomBytes(24).toString('base64url');
+  for (const dir of ['data', 'secrets']) mkdirSync(join(runtime, dir), {mode: 0o700});
+  writeFileSync(join(runtime, 'secrets/key'), key, {mode: 0o600});
+  writeFileSync(join(runtime, 'secrets/login'), `${password}\n`, {mode: 0o600});
+  const {Store} = await import(pathToFileURL(join(runtime, 'src/server/store.ts')).href);
+  const fixture = new Store(dbPath, key, password);
+  try {
+    const owner = fixture.db.prepare('SELECT id FROM users WHERE login = ?').get('admin').id;
+    fixture.putAccount(owner, 'smoke', {label: 'Synthetic runtime smoke', address: 'smoke@example.test'}, {imap: 'unused', smtp: 'unused'});
+  } finally {
+    fixture.close();
+  }
+  const before = readFileSync(dbPath);
+
+  const listener = createServer();
+  listener.listen(0, '127.0.0.1');
+  await once(listener, 'listening');
+  const {port} = listener.address();
+  await new Promise((done, fail) => listener.close(error => error ? fail(error) : done()));
+  const origin = `http://127.0.0.1:${port}`;
+  const env = {NODE_ENV: 'production', MAIL_MODE: 'disabled', REQUIRE_EXISTING_DB: 'yes',
+    BIND_HOST: '127.0.0.1', PORT: String(port), APP_ORIGIN: origin};
+  const command = prefix => {
+    const line = stage.find(line => line.startsWith(prefix));
+    assert.ok(line, `Missing ${prefix.trim()} in final stage`);
+    const [node, ...args] = JSON.parse(line.slice(line.indexOf('[')));
+    assert.equal(node, 'node');
+    return args;
+  };
+  server = spawn(process.execPath, command('CMD '), {cwd: runtime, env});
+  let log = '';
+  let exited = false;
+  const closed = new Promise(done => server.once('close', () => { exited = true; done(); }));
+  for (const stream of [server.stdout, server.stderr]) stream.on('data', chunk => { log += chunk; });
+  server.on('error', error => { log += String(error); });
+  try {
+    const deadline = Date.now() + 10_000;
+    while (!exited && !log.includes('Shott Mail gestart.') && Date.now() < deadline) await delay(50);
+    assert.ok(!exited && log.includes('Shott Mail gestart.'), `Packaged server failed to start:\n${log}`);
+    execFileSync(process.execPath, command('HEALTHCHECK '), {cwd: runtime, env, timeout: 5000, stdio: 'inherit'});
+    const page = await fetch(origin, {signal: AbortSignal.timeout(4000)});
+    assert.equal(page.status, 200);
+    assert.equal(await page.text(), readFileSync(join(runtime, 'dist/client/index.html'), 'utf8'));
+  } finally {
+    if (!exited) {
+      server.kill('SIGTERM');
+      const watchdog = setTimeout(() => server.kill('SIGKILL'), 3000);
+      try { await closed; } finally { clearTimeout(watchdog); }
+    }
+  }
+  const after = new DatabaseSync(dbPath, {readOnly: true});
+  try {
+    assert.equal(after.prepare('SELECT id FROM mailboxes').get()?.id, 'smoke');
+  } finally {
+    after.close();
+  }
+  assert.deepEqual(readFileSync(dbPath), before, 'Startup changed the existing synthetic database');
+  console.log('Staged runtime: CMD started, HEALTHCHECK and built index passed, existing synthetic DB unchanged.');
+} finally {
+  rmSync(runtime, {force: true, recursive: true});
+}
