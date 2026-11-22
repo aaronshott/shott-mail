@@ -64,6 +64,64 @@ async function openNewsletter(name,baseline=false){
  await open(name);
 }
 
+function measureInk(body,label){
+ const walker=document.createTreeWalker(body,NodeFilter.SHOW_TEXT);
+ let node;while((node=walker.nextNode())&&node.data.trim()!==label){}
+ assert(node,'Missing text: '+label);
+ const el=node.parentElement,foreground=getComputedStyle(el).color;
+ let background;
+ for(let paint=el;paint;paint=paint.parentElement){
+  const color=getComputedStyle(paint).backgroundColor;
+  if(color!=='rgba(0, 0, 0, 0)'){background=color;break;}
+ }
+ const luminance=value=>{
+  assert(/^rgb\(\d+, \d+, \d+\)$/.test(value),'Not opaque RGB: '+value+' ('+label+')');
+  return value.match(/\d+/g).reduce((sum,part,i)=>{
+   const v=Number(part)/255;return sum+[.2126,.7152,.0722][i]*(v<=.04045?v/12.92:((v+.055)/1.055)**2.4);
+  },0);
+ };
+ const a=luminance(foreground),b=luminance(background),ratio=(Math.max(a,b)+.05)/(Math.min(a,b)+.05);
+ el.scrollIntoView({block:'nearest'});
+ const range=document.createRange();range.selectNodeContents(node);
+ const visible=el.checkVisibility({visibilityProperty:true,opacityProperty:true})&&[...range.getClientRects()].some(r=>
+  r.width>0&&r.height>0&&r.right>0&&r.left<innerWidth&&r.bottom>0&&r.top<innerHeight);
+ assert(visible&&ratio>=4.5,`Unreadable ${label}: ${foreground} on ${background}, ${ratio}`);
+ return {label,foreground,background,ratio,visible};
+}
+export async function contrastStart(){
+ await openNewsletter('contrast');
+ assert((await connections())===0&&(await requests()).length===0,'contrast fixture caused image traffic');
+ return {passed:true,light:await contrastTheme('light')};
+}
+export async function contrastTheme(theme){
+ // Switch the same mounted reader to check that fallback colors are reversible.
+ document.documentElement.dataset.theme=theme;
+ await pause(0);
+ const body=reader().querySelector('.formatted-mail');
+ assert(!body.classList.contains('mail-authored-palette'),'transparent paint selected the white canvas');
+ const samples=['White text from a dark-mode design','No background','Transparent foreground'].map(label=>measureInk(body,label));
+ const dark=theme==='dark',paper=dark?'rgb(23, 36, 31)':'rgb(255, 255, 255)';
+ assert(samples.every(s=>s.background===paper)&&samples.slice(0,2).every(s=>(s.foreground==='rgb(255, 255, 255)')===dark),'wrong canvas or readable sender white lost');
+ return samples;
+}
+export async function contrastPalette(theme='light'){
+ if(theme==='light'){click('← Back to list');await open('contrast-palette');}
+ document.documentElement.dataset.theme=theme;
+ await pause(0);
+ const body=reader().querySelector('.formatted-mail');
+ const labels=['White on unpainted canvas','White inherited on dark','White nested on dark','Low contrast on cream','Readable ink on cream','Read the notes'];
+ const samples=labels.map(label=>measureInk(body,label));
+ const pairs=samples.map(s=>[s.foreground,s.background]);
+ const white='rgb(255, 255, 255)',dark='rgb(23, 36, 31)',cream='rgb(250, 243, 228)';
+ assert(JSON.stringify(pairs.slice(1,3))===JSON.stringify([[white,dark],[white,dark]]),'readable inherited color changed');
+ assert(pairs[0][1]===white&&pairs[3][1]===cream&&pairs[4][0]==='rgb(33, 52, 67)'&&pairs[4][1]===cream&&pairs[5][0]===white&&pairs[5][1]==='rgb(118, 44, 40)','authored palette changed');
+ const cta=[...body.querySelectorAll('span')].find(el=>el.textContent==='Read the notes');
+ const css=getComputedStyle(cta),cell=getComputedStyle(body.querySelector('td'));
+ assert(css.paddingLeft==='21px'&&css.borderRadius==='9px'&&css.display==='inline-block'&&cell.paddingTop==='12px'&&!body.querySelector('a,[href]'),'CTA or table layout changed');
+ assert(body.scrollWidth<=body.clientWidth&&document.documentElement.scrollWidth<=innerWidth,'contrast fixture overflows');
+ return samples;
+}
+
 export async function editionBefore(){
  await openNewsletter('edition');
  const body=reader().querySelector('.formatted-mail');

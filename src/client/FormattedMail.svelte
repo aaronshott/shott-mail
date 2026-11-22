@@ -3,6 +3,7 @@
  import {boundedInteger,formattingTags,imageURL,maxReaderImages,tableWidth} from '../reader-policy.ts';
  import {applyPresentation,cellPadding} from '../reader-presentation.ts';
  import {imageFrameDocument} from '../image-frame.ts';
+ import {protectReaderContrast} from './reader-contrast.ts';
 
  let {body,text,t}=$props();
  let target=$state(),status=$state(),available=$state(false),usable=$state(true),consented=$state(false);
@@ -71,8 +72,8 @@
   unsupportedSources=unsupported;
   limited=overBudget;
   inline=embedded;
-  if(target.querySelector('[style*="background-color:"]'))target.classList.add('mail-authored-palette');
   usable=!!target.textContent.trim();
+  return protectReaderContrast(target);
  });
 
  async function allowImages(event){

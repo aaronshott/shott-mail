@@ -7,7 +7,7 @@ import {join,resolve} from 'node:path';
 import {runTreeStyle} from './browser-tree-style.mjs';
 import {editionImages} from './newsletter-fixture.ts';
 const chrome=process.argv[2];if(!chrome)throw Error('Pass an absolute Chrome/Chromium path');
-const workflows=process.argv.length>3?process.argv.slice(3):['folders','context','composer','b1','users','settings','reply-nl','reply-en','reader-nl','reader-en','newsletter','edition','studio','tree-light','tree-dark'];
+const workflows=process.argv.length>3?process.argv.slice(3):['folders','context','composer','b1','users','settings','reply-nl','reply-en','reader-nl','reader-en','newsletter','edition','studio','contrast','tree-light','tree-dark'];
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 await mkdir('.test-data',{recursive:true,mode:0o700});
 const profile=await mkdtemp(resolve('.test-data/browser-chrome-'));
@@ -23,7 +23,7 @@ try{
   const record={kind,mobile};results.push(record);
   const replyLocale=kind==='reply-nl'?'nl':kind==='reply-en'?'en':null;
   const readerLocale=kind==='reader-nl'?'nl':kind==='reader-en'?'en':null;
-  const studio=kind==='studio',edition=kind==='edition',garden=kind==='newsletter'||edition||studio,needsImage=readerLocale||garden;
+  const studio=kind==='studio',edition=kind==='edition',garden=kind==='newsletter'||kind==='contrast'||edition||studio,needsImage=readerLocale||garden;
   const treeTheme=kind==='tree-light'?'light':kind==='tree-dark'?'dark':null;
   const h=start(process.execPath,['tests/browser-harness.ts',...(garden?['--newsletter']:readerLocale?['--reader']:replyLocale?['--reply-subjects']:kind==='context'?['--folders','--context']:treeTheme?['--folders','--tree-style']:kind==='settings'?['--folders']:['folders','composer'].includes(kind)?[`--${kind}`]:[])]);
   let origin,imageOrigin,tab,ws,harnessOutput='';h.stdout.on('data',chunk=>{harnessOutput+=chunk;const match=/BROWSER_HARNESS (http:\/\/127\.0\.0\.1:\d+)(?: (https:\/\/images\.example\.test:\d+))?\r?\n/.exec(harnessOutput);if(match)[,origin,imageOrigin]=match;});
@@ -84,7 +84,16 @@ try{
      if(mobile){await call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point]});await call('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});}
      else for(const type of ['mousePressed','mouseReleased'])await call('Input.dispatchMouseEvent',{type,...point,button:'left',clickCount:1});
     };
-    if(studio){
+    if(kind==='contrast'){
+     record.result=await run('contrastStart');
+     await shot('contrast-light',true);
+     record.result.dark=await run('contrastTheme',JSON.stringify('dark'));
+     await shot('contrast-dark',true);
+     record.result.lightAgain=await run('contrastTheme',JSON.stringify('light'));
+     record.result.palette=await run('contrastPalette');
+     await shot('contrast-palette',true);
+     record.result.paletteDark=await run('contrastPalette',JSON.stringify('dark'));
+    }else if(studio){
      record.before=await run('studioBefore');
      if(observed.length)throw Error('CDP observed studio network before consent');
      await shot(baseline?'studio-before':'studio-after-blocked');

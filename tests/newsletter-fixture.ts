@@ -32,6 +32,18 @@ export function missingImage(origin:string){
  return headers('Reader missing')+`Content-Type: text/html; charset=utf-8\r\n\r\n<h1>Monthly notice</h1><img src="${origin}/missing.png" alt="Archive illustration">\r\n`;
 }
 
+export function contrastFixtures(){
+ const html=(name:string,body:string)=>headers(`Reader ${name}`)+`Content-Type: text/html; charset=utf-8\r\n\r\n${body}\r\n`;
+ return [html('contrast','<h1>Plain heading</h1><p><span style="color:white;background-color:transparent">White text from a dark-mode design</span></p>'+
+  '<p style="color:white"><strong><em>No background</em></strong></p><p style="color:transparent"><strong>Transparent foreground</strong></p>'),
+  html('contrast-palette',`<div style="color:white">White on unpainted canvas
+  <p style="background-color:#17241f">White inherited on dark <strong><em>White nested on dark</em></strong></p></div>
+  <table role="presentation" bgcolor="#faf3e4" cellpadding="12" style="color:#e8ded3"><tr><td>
+   <strong><em>Low contrast on cream</em></strong><p style="color:#213443"><strong>Readable ink on cream</strong></p>
+   <p><a href="https://example.test/notes" style="display:inline-block;color:white;background-color:#762c28;padding:8px 21px;border-radius:9px">Read the notes</a></p>
+  </td></tr></table>`)];
+}
+
 export const editionImages=['/orchard.png?edition=7&crop=wide','/market.png?edition=7&size=compact'];
 export function edition(origin:string){
  const [hero,market]=editionImages.map(path=>path.replace('&','&amp;'));
