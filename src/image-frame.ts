@@ -1,6 +1,8 @@
-const layout='html,body{margin:0;height:100%}img{display:block;max-width:100%;max-height:100%;width:auto;height:auto}';
+// Match the iframe element's color scheme so Chromium composites the
+// transparent image canvas over the mail's local surface in either app theme.
+const layout='html,body{margin:0;height:100%;color-scheme:light;background:transparent}img{display:block;max-width:100%;max-height:100%;width:auto;height:auto}';
 // Allow exactly the fixed layout, including in the inherited srcdoc CSP.
-export const imageStyleHash="'sha256-Ez4qYToij/n8PH6v5YjB245idI8HW6HpZ3hIvFtYFU4='";
+export const imageStyleHash="'sha256-PMTY6otxIvEwiKApY3VhRBXWVicfKflLT0emQeDECv0='";
 const attribute=(value:string)=>value.replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;');
 
 // Called only with a checked URL and alt text, after the current view's trusted click.

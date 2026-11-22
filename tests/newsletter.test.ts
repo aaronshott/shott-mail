@@ -3,6 +3,31 @@ import assert from 'node:assert/strict';
 import {parseMessage} from '../src/server/inbox.ts';
 import {newsletter,imageOnly,edition,editionImages,studio,diagnostics,pictureFixtures,picturePaths} from './newsletter-fixture.ts';
 import {formatBody} from '../src/server/format-body.ts';
+import {headerMail,headerPaths} from './header-fixture.ts';
+
+test('header MIME retains bounded width-only images and omits explicitly hidden alternate before collecting URLs',async()=>{
+ const origin='https://images.example.test';
+ const {formatted}=await parseMessage(Buffer.from(headerMail(origin)));
+ assert.deepEqual(formatted?.images,headerPaths.map(path=>origin+path));
+ assert.match(formatted!.markup,/data-image-width="126">Pine Post/);
+ assert.match(formatted!.markup,/data-image-width="24">Field icon/);
+ assert.match(formatted!.markup,/data-image-width="240" data-image-height="72">Static countdown/);
+ assert.doesNotMatch(formatted!.markup,/Alternate|style=|src=|href=/);
+});
+
+test('layout omission is literal, does not infer CSS variants, and hidden slots consume no budget',()=>{
+ const origin='https://images.example.test';
+ const img=(name:string)=>`<img src="${origin}/${name}.png" alt="${name}" width="1201">`;
+ const table=(attributes:string,contents:string)=>`<table ${attributes}><tr><td>${contents}</td></tr></table>`;
+ const formatted=formatBody(`<style>@media(max-width:600px){.alt{display:none}}</style>`+
+  table('role="presentation" style=" display: none "',img('hidden').repeat(50))+
+  table('role="presentation" class="alt"',img('class-only'))+
+  table('role="presentation" style="display:none;display:table"',img('ambiguous'))+
+  table('style="display:none"',img('data-table')))!;
+ assert.deepEqual(formatted.images,['class-only','ambiguous','data-table'].map(name=>`${origin}/${name}.png`));
+ assert.equal(formatted.imageRejections,undefined);
+ assert.doesNotMatch(formatted.markup,/hidden|style|class=|data-image-width/);
+});
 
 test('newsletter promotes protocol-relative src to HTTPS and uses eligible data-src as fallback',async()=>{
  const origin='https://images.example.test:4443';

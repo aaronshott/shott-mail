@@ -64,6 +64,28 @@ async function openNewsletter(name,baseline=false){
  await open(name);
 }
 
+export async function headerBefore(theme){
+ await openNewsletter('header');
+ document.documentElement.dataset.theme=theme;
+ const body=reader().querySelector('.formatted-mail');
+ body.style.maxWidth='720px'; // match the reported newsletter region, not browser outer width
+ const control=button('Load remote images');
+ assert(control&&!body.querySelector('a,img,iframe,script,style,[href],[src]'),'header not inert before consent');
+ control.click();await pause(250);
+ assert(!(await connections())&&!(await requests()).length,'header connected before trusted consent');
+ control.scrollIntoView({block:'center'});const box=control.getBoundingClientRect();
+ return {connections:0,requests:0,point:{x:box.x+box.width/2,y:box.y+box.height/2}};
+}
+export async function headerAfter(){
+ const body=reader().querySelector('.formatted-mail');
+ const frames=[...body.querySelectorAll('iframe')];
+ assert(frames.every(f=>f.getAttribute('sandbox')===''&&f.hasAttribute('credentialless')&&f.referrerPolicy==='no-referrer'&&f.contentDocument===null),'header frame isolation changed');
+ assert(!body.querySelector('a,img,[href],script,style'),'unexpected active header content');
+ const ink=['Dispatch window','09:00 UTC','Trail conditions','Clear'].map(label=>measureInk(body,label));
+ body.scrollIntoView({block:'start'});
+ return {ink,requests:await requests(),overflow:body.scrollWidth>body.clientWidth||document.documentElement.scrollWidth>innerWidth};
+}
+
 function measureInk(body,label){
  const walker=document.createTreeWalker(body,NodeFilter.SHOW_TEXT);
  let node;while((node=walker.nextNode())&&node.data.trim()!==label){}

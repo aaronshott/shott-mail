@@ -6,6 +6,7 @@ import {createServer as createHttps} from 'node:https';
 import {once} from 'node:events';
 import {crc32,deflateSync} from 'node:zlib';
 import {newsletter,imageOnly,missingImage,edition,studio,contrastFixtures,diagnostics,pictureFixtures} from './newsletter-fixture.ts';
+import {headerAsset,headerMail,headerReference,headerReferenceCSS} from './header-fixture.ts';
 
 function newsletterPng(){
  const width=640,height=120;
@@ -35,10 +36,10 @@ const imageHost=reader?createHttps({key:readFileSync(join(dir,'mail.key')),cert:
  }
  if(req.url==='/missing.png'){res.writeHead(404,{'Cache-Control':'no-store'});res.end();return;}
  res.writeHead(200,{'Content-Type':'image/png','Cache-Control':'no-store'}); // deliberately no CORS
- res.end(imageBytes);
+ res.end(headerAsset(req.url??'')??imageBytes);
 }):null;
 let imageOrigin='';
-if(imageHost){imageHost.on('connection',()=>{imageConnections.count++;});const listening=once(imageHost,'listening');imageHost.listen(0,'127.0.0.1');await listening;imageOrigin=`https://images.example.test:${(imageHost.address() as {port:number}).port}`;mail!.seedReader(imageOrigin,garden?[newsletter(imageOrigin),imageOnly(imageOrigin),missingImage(imageOrigin),edition(imageOrigin),studio(imageOrigin),...contrastFixtures(),...pictureFixtures(imageOrigin)]:process.argv.includes('--diagnostics')?[diagnostics(imageOrigin),missingImage(imageOrigin)]:[]);}
+if(imageHost){imageHost.on('connection',()=>{imageConnections.count++;});const listening=once(imageHost,'listening');imageHost.listen(0,'127.0.0.1');await listening;imageOrigin=`https://images.example.test:${(imageHost.address() as {port:number}).port}`;mail!.seedReader(imageOrigin,garden?[newsletter(imageOrigin),imageOnly(imageOrigin),missingImage(imageOrigin),edition(imageOrigin),studio(imageOrigin),...contrastFixtures(),...pictureFixtures(imageOrigin),headerMail(imageOrigin)]:process.argv.includes('--diagnostics')?[diagnostics(imageOrigin),missingImage(imageOrigin)]:[]);}
 if(replySubjects)mail?.seedReplySubjects();
 if(process.argv.includes('--context'))mail?.seedSent();
 const c={dbPath:join(dir,'app.sqlite'),key:randomBytes(32),password:randomBytes(24).toString('base64url'),origin:'http://127.0.0.1',secureCookie:false,allowedMail:mail?.allowedMail??[],sessionMs:3600000,staticRoot:resolve('dist/client'),...(mail?{mailMode:'fixture' as const,ca:mail.ca,timeoutMs:3000}:{}),...(folders?{pageSize:1}:{})};
@@ -64,6 +65,12 @@ app.get('/__test_users.js',async(_req,reply)=>reply.type('text/javascript').send
 app.get('/__test_composer.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-composer.js','utf8')));
 app.get('/__test_settings.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-settings.js','utf8')));
 if(reader){
+ app.get('/__test_header',async(_req,reply)=>reply.type('text/html').send(headerReference()));
+ app.get('/__test_header.css',async(_req,reply)=>reply.type('text/css').send(headerReferenceCSS));
+ app.get<{Params:{name:string}}>('/__test_header_asset/:name',async(req,reply)=>{
+  const asset=headerAsset('/'+req.params.name);
+  return asset?reply.type('image/png').send(asset):reply.code(404).send();
+ });
  app.get('/__test_reader.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-reader.js','utf8')));
  app.get('/__test_image_requests',async()=>imageRequests);
  app.get('/__test_image_connections',async()=>imageConnections.count);

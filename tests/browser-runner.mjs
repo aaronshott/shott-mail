@@ -5,9 +5,10 @@ import {once} from 'node:events';
 import {mkdir,mkdtemp,readFile,rm,writeFile} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {runTreeStyle} from './browser-tree-style.mjs';
+import {runHeader} from './browser-header.mjs';
 import {editionImages,picturePaths} from './newsletter-fixture.ts';
 const chrome=process.argv[2];if(!chrome)throw Error('Pass an absolute Chrome/Chromium path');
-const workflows=process.argv.length>3?process.argv.slice(3):['folders','context','composer','b1','users','settings','reply-nl','reply-en','reader-nl','reader-en','diagnostics-nl','diagnostics-en','newsletter','edition','studio','picture','contrast','tree-light','tree-dark'];
+const workflows=process.argv.length>3?process.argv.slice(3):['folders','context','composer','b1','users','settings','reply-nl','reply-en','reader-nl','reader-en','diagnostics-nl','diagnostics-en','newsletter','edition','studio','picture','contrast','header-light','header-dark','tree-light','tree-dark'];
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 await mkdir('.test-data',{recursive:true,mode:0o700});
 const profile=await mkdtemp(resolve('.test-data/browser-chrome-'));
@@ -24,7 +25,8 @@ try{
   const replyLocale=kind==='reply-nl'?'nl':kind==='reply-en'?'en':null;
   const readerLocale=kind==='reader-nl'?'nl':kind==='reader-en'?'en':null;
   const diagnosticsLocale=kind==='diagnostics-nl'?'nl':kind==='diagnostics-en'?'en':null;
-  const studio=kind==='studio',edition=kind==='edition',picture=kind==='picture',garden=kind==='newsletter'||kind==='contrast'||edition||studio||picture,needsImage=readerLocale||garden||diagnosticsLocale;
+  const header=kind==='header-light'?'light':kind==='header-dark'?'dark':null;
+  const studio=kind==='studio',edition=kind==='edition',picture=kind==='picture',garden=kind==='newsletter'||kind==='contrast'||edition||studio||picture||header,needsImage=readerLocale||garden||diagnosticsLocale;
   const treeTheme=kind==='tree-light'?'light':kind==='tree-dark'?'dark':null;
   const h=start(process.execPath,['tests/browser-harness.ts',...(garden?['--newsletter']:diagnosticsLocale?['--reader','--diagnostics']:readerLocale?['--reader']:replyLocale?['--reply-subjects']:kind==='context'?['--folders','--context']:treeTheme?['--folders','--tree-style']:kind==='settings'?['--folders']:['folders','composer'].includes(kind)?[`--${kind}`]:[])]);
   let origin,imageOrigin,tab,ws,harnessOutput='';h.stdout.on('data',chunk=>{harnessOutput+=chunk;const match=/BROWSER_HARNESS (http:\/\/127\.0\.0\.1:\d+)(?: (https:\/\/images\.example\.test:\d+))?\r?\n/.exec(harnessOutput);if(match)[,origin,imageOrigin]=match;});
@@ -48,7 +50,7 @@ try{
     if(method==='Target.detachedFromTarget')for(const [frameId,sessionId] of imageFrames)if(sessionId===params.sessionId)imageFrames.delete(frameId);
     if(method==='Network.requestWillBeSent'&&[imageOrigin,imageOrigin.replace('images.','cdn.')].includes(new URL(params.request.url).origin))observed.push(new URL(params.request.url).pathname);
    };
-   await call('Emulation.setDeviceMetricsOverride',{width:mobile?(replyLocale||readerLocale?320:390):1280,height:mobile?844:900,deviceScaleFactor:mobile?3:1,mobile});
+   await call('Emulation.setDeviceMetricsOverride',{width:mobile?(replyLocale||readerLocale?320:390):(header?1600:1280),height:mobile?844:900,deviceScaleFactor:mobile&&!header?3:1,mobile});
    await call('Emulation.setTouchEmulationEnabled',{enabled:mobile});
    if(treeTheme||kind==='settings')await call('Emulation.setEmulatedMedia',{features:[{name:'prefers-color-scheme',value:treeTheme??'dark'}]});
    if(needsImage){
@@ -85,7 +87,9 @@ try{
      if(mobile){await call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point]});await call('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});}
      else for(const type of ['mousePressed','mouseReleased'])await call('Input.dispatchMouseEvent',{type,...point,button:'left',clickCount:1});
     };
-    if(diagnosticsLocale){
+    if(header){
+     record.result=await runHeader({call,evaluate,poll,run,gesture,imageFrames,observed,origin,mobile,record,theme:header,dir:process.env.HEADER_SCREENSHOTS});
+    }else if(diagnosticsLocale){
      const lang=JSON.stringify(diagnosticsLocale);
      record.before=await run('diagnosticsBefore',lang);
      if(observed.length)throw Error('CDP observed network before consent');

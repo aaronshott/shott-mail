@@ -56,21 +56,32 @@ a{color:var(--link)}
 .formatted-mail h2{font-size:1.4rem}
 .formatted-mail blockquote{margin-inline:0;padding-inline-start:1em;border-inline-start:3px solid var(--line)}
 .formatted-mail table{border-collapse:collapse;max-inline-size:100%;table-layout:fixed;text-align:start}
+.formatted-mail table[role=presentation]{margin-block:0}
+/* Let compact image cells share only the space they need, not an equal
+   fixed-layout column at the expense of neighbouring live text. */
+.formatted-mail table[role=presentation]:has(>:is(thead,tbody,tfoot)>tr>td>.mail-image-short){table-layout:auto}
 .formatted-mail .mail-table-centered{margin-inline:auto}
 .formatted-mail table:not([role=presentation])>caption{text-align:start;font-weight:650;padding-block:.25em}
 .formatted-mail table:not([role=presentation])>:is(thead,tbody,tfoot)>tr>:is(td,th){border:1px solid var(--line);padding:.4em .55em;vertical-align:top}
 .formatted-mail table:not([role=presentation])>:is(thead,tbody,tfoot)>tr>th{background:var(--badge);text-align:start}
 .formatted-mail table[role=presentation]>:is(thead,tbody,tfoot)>tr>:is(td,th){padding:0;vertical-align:top}
 @container (max-width: 440px){
+ /* The desktop cell widths of these rows are preferences, not reservations
+    that should squeeze both the artwork and text on narrow screens. */
+ .formatted-mail table[role=presentation]:not(.mail-stack-columns)>:is(thead,tbody,tfoot)>tr:has(>td>.mail-image-short)>td{width:auto!important;overflow-wrap:break-word}
  .formatted-mail .mail-stack-columns,.formatted-mail .mail-stack-columns>:is(thead,tbody,tfoot),
  .formatted-mail .mail-stack-columns>:is(thead,tbody,tfoot)>tr{display:block}
  .formatted-mail .mail-stack-columns>:is(thead,tbody,tfoot)>tr>td{display:block;width:100%!important}
 }
 .mail-image-placeholder{display:inline-block;max-inline-size:100%;padding:.15em .45em;margin-block:.15em;border-radius:.25em;background:var(--badge);color:var(--muted);font-size:.9em}
 .mail-image-frame,.formatted-mail iframe{display:block;inline-size:100%;min-inline-size:0}
-.formatted-mail iframe{block-size:clamp(5rem,24cqi,12rem);border:0}
+.formatted-mail iframe{block-size:clamp(5rem,24cqi,12rem);border:0;background:transparent;color-scheme:light}
+.formatted-mail .mail-image-centered{margin-inline:auto}
+/* No intrinsic size is exposed across the opaque frame. Bound width-only
+   compact art to a short viewport instead of the generic photo fallback. */
+.formatted-mail .mail-image-short>iframe{block-size:32px}
 .formatted-mail .mail-image-sized{position:relative;min-block-size:1.5rem;max-block-size:28rem}
-.formatted-mail .mail-image-sized>iframe{position:absolute;inset:0;block-size:100%;background:transparent}
+.formatted-mail .mail-image-sized>iframe{position:absolute;inset:0;block-size:100%}
 .formatted-mail .mail-image-compact{display:inline-block;vertical-align:top;margin-block-end:4px}
 .mail-text-view{margin-block:1em}
 .image-controls{margin-block:1em;padding:.75em;border:1px solid var(--line);border-inline-start:4px solid var(--link);border-radius:.4em;background:var(--badge)}

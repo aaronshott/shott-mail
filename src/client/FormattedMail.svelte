@@ -95,8 +95,13 @@
    // The sandbox is opaque: use native image alt fallback rather than treating frame load as image success.
    frame.srcdoc=imageFrameDocument(url,alt||t('remoteImageUnavailable'));
    slot.className='mail-image-frame';slot.replaceChildren(frame);
+   if(width){
+    if(height)slot.style.maxWidth=`min(100%, ${width}px)`;
+    else slot.style.width=`${width}px`;
+    if(getComputedStyle(slot).textAlign==='center')slot.classList.add('mail-image-centered');
+    if(!height&&Number(width)<=160)slot.classList.add('mail-image-short');
+   }
    if(width&&height){
-    slot.style.maxWidth=`${width}px`;
     slot.classList.add('mail-image-sized');
     slot.style.aspectRatio=`${width} / ${height}`;
     if(Number(width)<=160)slot.classList.add('mail-image-compact');
