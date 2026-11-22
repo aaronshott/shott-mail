@@ -30,7 +30,7 @@ a{color:var(--link)}
 .account-folders small{display:block;color:var(--muted);overflow-wrap:anywhere}
 .mail time{font-size:.85rem;color:var(--muted)}
 .formatted-mail{overflow-wrap:anywhere;overflow:auto;min-width:0}
-.formatted-mail img{max-inline-size:100%;block-size:auto}
+.formatted-mail iframe{display:block;inline-size:100%;block-size:12rem;border:0}
 .formatted-mail table{border-collapse:collapse}
 .formatted-mail :is(td,th){border:1px solid var(--line);padding:.3em}
 .image-controls{margin-block:1em}

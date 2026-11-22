@@ -9,6 +9,7 @@ import {routes} from './routes.ts';
 import {inboxRoutes} from './inbox.ts';
 import staticPlugin from '@fastify/static';
 import {existsSync} from 'node:fs';
+import {imageStyleHash} from '../image-frame.ts';
 
 import type {MailPolicy} from './mail-policy.ts';
 export type Config=MailPolicy & {dbPath:string;key:Buffer;password:string;origin:string;secureCookie:boolean;sessionMs:number;staticRoot:string;dir?:string;loginAttempts?:number;bodyLimit?:number;sqliteBusyMs?:number};
@@ -35,7 +36,8 @@ export async function buildApp(c:Config){
  let loginCount=0,windowStart=Date.now(); let hashing=false;
  app.addHook('onRequest',async(req,reply)=>{
   reply.header('Cache-Control','no-store').header('X-Content-Type-Options','nosniff').header('Referrer-Policy','no-referrer');
-  reply.header('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src 'self' https:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
+  // srcdoc inherits img-src and style-src; frame-src still denies URL-based frames.
+  reply.header('Content-Security-Policy',`default-src 'self'; script-src 'self'; style-src 'self' ${imageStyleHash}; img-src 'self' https:; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`);
   reply.header('X-DNS-Prefetch-Control','off');
   if(!req.routeOptions.url?.startsWith('/api/'))return;
   if(req.method!=='GET'&&req.method!=='HEAD'&&req.headers.origin!==c.origin)return reply.code(403).send({error:'ORIGIN'});

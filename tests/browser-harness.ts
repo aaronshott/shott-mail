@@ -4,19 +4,37 @@ import {mkdtempSync,mkdirSync,readFileSync,rmSync} from 'node:fs';import {resolv
 import {startMailFixture} from './mail-fixture.ts';
 import {createServer as createHttps} from 'node:https';
 import {once} from 'node:events';
+import {crc32,deflateSync} from 'node:zlib';
+
+function newsletterPng(){
+ const width=640,height=120;
+ const dimensions=Buffer.alloc(13);dimensions.writeUInt32BE(width);dimensions.writeUInt32BE(height,4);dimensions.set([8,2],8);
+ const pixels=Buffer.alloc((1+width*3)*height);
+ for(let y=0;y<height;y++)for(let x=0;x<width;x++)pixels.set(x<width/2?[24,96,160]:[28,138,91],y*(1+width*3)+1+x*3);
+ const chunk=(type:string,data:Buffer)=>{
+  const body=Buffer.concat([Buffer.from(type),data]),length=Buffer.alloc(4),checksum=Buffer.alloc(4);
+  length.writeUInt32BE(data.length);checksum.writeUInt32BE(crc32(body));return Buffer.concat([length,body,checksum]);
+ };
+ return Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),chunk('IHDR',dimensions),chunk('IDAT',deflateSync(pixels)),chunk('IEND',Buffer.alloc(0))]);
+}
 mkdirSync('.test-data',{recursive:true,mode:0o700});const dir=mkdtempSync(resolve('.test-data/browser-'));
 const folders=process.argv.includes('--folders');
 const replySubjects=process.argv.includes('--reply-subjects');
 const reader=process.argv.includes('--reader');
 const mail=folders||replySubjects||reader||process.argv.includes('--composer')?await startMailFixture(dir,folders):null;
 const imageRequests:{path?:string;cookie:boolean;referer:boolean;authorization:boolean}[]=[];
+const imageConnections:{count:number}={count:0};
+const imageBytes=reader?newsletterPng():null;
 const imageHost=reader?createHttps({key:readFileSync(join(dir,'mail.key')),cert:mail!.ca},(req,res)=>{
  imageRequests.push({path:req.url,cookie:!!req.headers.cookie,referer:!!req.headers.referer,authorization:!!req.headers.authorization});
- res.writeHead(200,{'Access-Control-Allow-Origin':'*','Content-Type':'image/png'});
- res.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9WQAAAAASUVORK5CYII=','base64'));
+ if(req.url==='/redirect.png'){
+  res.writeHead(302,{Location:imageOrigin.replace('images.example.test','cdn.example.test')+'/final.png','Cache-Control':'no-store'});res.end();return;
+ }
+ res.writeHead(200,{'Content-Type':'image/png','Cache-Control':'no-store'}); // deliberately no CORS
+ res.end(imageBytes);
 }):null;
 let imageOrigin='';
-if(imageHost){const listening=once(imageHost,'listening');imageHost.listen(0,'127.0.0.1');await listening;imageOrigin=`https://127.0.0.1:${(imageHost.address() as {port:number}).port}`;mail!.seedReader(imageOrigin);}
+if(imageHost){imageHost.on('connection',()=>{imageConnections.count++;});const listening=once(imageHost,'listening');imageHost.listen(0,'127.0.0.1');await listening;imageOrigin=`https://images.example.test:${(imageHost.address() as {port:number}).port}`;mail!.seedReader(imageOrigin);}
 if(replySubjects)mail?.seedReplySubjects();
 if(process.argv.includes('--context'))mail?.seedSent();
 const c={dbPath:join(dir,'app.sqlite'),key:randomBytes(32),password:randomBytes(24).toString('base64url'),origin:'http://127.0.0.1',secureCookie:false,allowedMail:mail?.allowedMail??[],sessionMs:3600000,staticRoot:resolve('dist/client'),...(mail?{mailMode:'fixture' as const,ca:mail.ca,timeoutMs:3000}:{}),...(folders?{pageSize:1}:{})};
@@ -41,6 +59,7 @@ app.get('/__test_settings.js',async(_req,reply)=>reply.type('text/javascript').s
 if(reader){
  app.get('/__test_reader.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-reader.js','utf8')));
  app.get('/__test_image_requests',async()=>imageRequests);
+ app.get('/__test_image_connections',async()=>imageConnections.count);
 }
 if(replySubjects)app.get('/__test_reply_subjects.js',async(_req,reply)=>reply.type('text/javascript').send(readFileSync('tests/browser-reply-subjects.js','utf8')));
 if(folders&&mail){
