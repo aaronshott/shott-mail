@@ -80,10 +80,29 @@ function srcsetFallback(raw:string|undefined,appHostname:string):ImageDecision {
  return best?{url:best.url}:{reason:'missing'};
 }
 
+export const maxPictureSources=8;
+const pictureTypes=new Set(['image/png','image/jpeg','image/gif','image/webp','image/avif','image/bmp','image/x-icon','image/vnd.microsoft.icon']);
+
+function pictureFallback(sources:Record<string,string>[],appHostname:string):ImageDecision {
+ if(sources.length>maxPictureSources)return {reason:'srcsetLimit'};
+ let reason:ImageRejection='missing';
+ for(const attrs of sources){
+  if(!attrs.srcset?.trim())continue;
+  // This is a static fallback, not responsive selection. Never evaluate
+  // sender media queries or ask the browser to try alternate candidates.
+  const type=attrs.type?.trim().toLowerCase();
+  const result=attrs.media?.trim()||(type&&!pictureTypes.has(type))?
+   {reason:'unsupportedAttribute' as const}:srcsetFallback(attrs.srcset,appHostname);
+  if('url' in result)return result;
+  if(reason==='missing')reason=result.reason;
+ }
+ return {reason};
+}
+
 // Keep the existing fallback order. Only if all fail, report the first
 // nonempty attempted source. Recognize a fixed set of ignored attributes;
 // never infer meaning from arbitrary names or expose one in the result.
-export function selectImageSource(attrs:Record<string,string>,appHostname:string):ImageDecision {
+export function selectImageSource(attrs:Record<string,string>,appHostname:string,pictureSources?:Record<string,string>[]):ImageDecision {
  if(/^cid:/i.test(attrs.src?.trim()??''))return {reason:'cid'};
  let reason:ImageRejection='missing';
  for(const check of [()=>newsletterImageURL(attrs.src,appHostname),()=>newsletterImageURL(attrs['data-src'],appHostname),()=>srcsetFallback(attrs.srcset,appHostname)]){
@@ -91,6 +110,10 @@ export function selectImageSource(attrs:Record<string,string>,appHostname:string
   if('url' in result)return result;
   if(reason==='missing')reason=result.reason;
  }
- if(reason==='missing'&&['data-original','data-lazy-src','data-srcset'].some(key=>attrs[key]?.trim()))return {reason:'unsupportedAttribute'};
+ if(reason==='missing'&&['data-original','data-lazy-src','data-srcset'].some(key=>attrs[key]?.trim()))reason='unsupportedAttribute';
+ if(pictureSources){
+  const result=pictureFallback(pictureSources,appHostname);
+  if('url' in result||reason==='missing')return result;
+ }
  return {reason};
 }

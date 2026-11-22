@@ -257,3 +257,49 @@ export async function diagnosticsAfter(lang){
  const m=await fetch('/__test_metrics').then(r=>r.json());assert(!m.sendRequests&&!m.smtpAuth&&!m.deliveries&&!m.appendAttempts,'diagnostics changed mail or sent a draft');
  return {passed:true,note,observed};
 }
+
+async function picturePayload(){
+ const endpoint=performance.getEntriesByType('resource').findLast(e=>new URL(e.name).pathname.startsWith('/api/messages/'));
+ const response=await fetch(endpoint.name);assert(response.ok,'real IMAP message API failed');
+ const {formatted,text}=await response.json();
+ assert(text.trim()==='Plain picture fixture.'&&!JSON.stringify(formatted).includes('private-'),'plain MIME lost or rejected destination leaked');
+ assert(!reader().querySelector('.formatted-mail picture,.formatted-mail source,.formatted-mail a,.formatted-mail style,.formatted-mail link,.formatted-mail [href],.formatted-mail [srcset]'),'sender markup activated');
+ return formatted;
+}
+
+export async function pictureBefore(expected){
+ await openNewsletter('empty');
+ const empty=await picturePayload();
+ assert(JSON.stringify(empty.imageRejections)==='{"missing":23}'&&!empty.images.length&&!button('Load remote images')&&!reader().querySelector('iframe,img'),'truly empty slots became fetchable');
+ click('← Back to list');await open('picture');
+ const picture=await picturePayload(),control=button('Load remote images');
+ control?.click();await pause(250);
+ const pre={requests:await requests(),connections:await connections(),empty:empty.imageRejections,slots:picture.images.length,rejections:picture.imageRejections??null};
+ assert(!pre.requests.length&&!pre.connections&&!reader().querySelector('iframe,img'),'contact or image before trusted gesture');
+ assert(control&&!picture.imageRejections&&JSON.stringify(picture.images)===JSON.stringify(expected),'unexpected picture API result: '+JSON.stringify(pre));
+ return {...pre,point:gardenPoint()};
+}
+
+export function pictureVisible(count){
+ const frames=[...reader().querySelectorAll('.formatted-mail iframe')];
+ assert(frames.length===count&&frames.every(f=>f.getAttribute('sandbox')===''&&f.hasAttribute('credentialless')&&f.referrerPolicy==='no-referrer'&&f.contentDocument===null),'picture frames not isolated');
+ assert(document.documentElement.scrollWidth<=innerWidth,'picture overflow');
+ return frames.map(f=>{
+  f.scrollIntoView({block:'center'});
+  const r=f.getBoundingClientRect();
+  assert(f.checkVisibility({visibilityProperty:true,opacityProperty:true})&&r.width===128&&r.height===24&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight,'picture frame not visible');
+  return [r.width,r.height];
+ });
+}
+
+export async function pictureReset(){
+ const observed=await requests(),count=await connections();
+ click('← Back to list');await open('picture');
+ assert(button('Load remote images')&&!reader().querySelector('img,iframe'),'picture consent persisted on reopen');
+ if(!document.querySelector('.list').getClientRects().length)click('← Back to list');
+ await open('garden');await pause(250);
+ assert(button('Load remote images')&&!reader().querySelector('img,iframe'),'picture consent leaked to another message');
+ assert((await requests()).length===observed.length&&(await connections())===count,'reopen/switch contacted host');
+ const m=await fetch('/__test_metrics').then(r=>r.json());assert(!m.sendRequests&&!m.smtpAuth&&!m.deliveries&&!m.appendAttempts,'reading changed mail or sent a draft');
+ return {passed:true,observed,connections:count,reset:true};
+}

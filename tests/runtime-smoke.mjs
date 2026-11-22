@@ -10,6 +10,7 @@ import {dirname, join, resolve} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {setTimeout as delay} from 'node:timers/promises';
 import {fileURLToPath, pathToFileURL} from 'node:url';
+import {pictureFixtures,picturePaths} from './newsletter-fixture.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const lines = readFileSync(join(root, 'Dockerfile'), 'utf8').split(/\r?\n/);
@@ -37,6 +38,15 @@ try {
   const installFlags = install[1].split(/\s+/);
   assert.deepEqual(installFlags, ['--omit=dev', '--ignore-scripts']);
   execFileSync('npm', ['ci', ...installFlags, '--offline', '--no-audit', '--no-fund'], {cwd: runtime, stdio: 'inherit'});
+
+  const {parseMessage} = await import(pathToFileURL(join(runtime, 'src/server/inbox.ts')).href);
+  const imageOrigin = 'https://images.example.test';
+  const [picture, empty] = await Promise.all(pictureFixtures(imageOrigin).map(raw => parseMessage(Buffer.from(raw))));
+  assert.deepEqual(picture.formatted?.images, picturePaths.map(path => imageOrigin + path));
+  assert.equal(picture.formatted?.imageRejections, undefined);
+  assert.deepEqual(empty.formatted?.images, []);
+  assert.deepEqual(empty.formatted?.imageRejections, {missing:23});
+  console.log('Staged runtime MIME: 23 selected picture URLs, 23 genuine missing sources.');
 
   const dbPath = join(runtime, 'data', 'app.sqlite');
   const key = randomBytes(32);

@@ -273,8 +273,14 @@ als bewijs; een scriptbestand of `compose config` is geen PASS.
   Ook normale HTTPS-redirects zijn mogelijk. De beeldhost ziet het IP-adres
   en kan bezoekers herkennen aan bijvoorbeeld een unieke URL.
 - De lezer probeert `img src`, daarna `data-src`, daarna één kandidaat uit een
-  begrensde, volledig gevalideerde `img srcset` (kleinste descriptor, geen
-  `sizes` of `picture source`). Absolute HTTP- en protocolrelatieve bronnen
+  begrensde, volledig gevalideerde `img srcset`. Als die geen bruikbare URL
+  opleveren, kan de eerste directe `img` van een niet-geneste `picture` één
+  URL uit een voorafgaande directe `source srcset` gebruiken. Maximaal acht
+  `source`-elementen vóór de `img`; de eerste geldige declaratie wint en
+  daaruit de kleinste descriptor (maximaal acht kandidaten per declaratie).
+  Alleen ongeconditioneerde bronnen zonder typehint of met een ondersteunde
+  rastertypehint komen in aanmerking; `media` en `sizes` worden niet uitgevoerd.
+  Een lege `img` zonder zo'n expliciete bron blijft onbeschikbaar. Absolute HTTP- en protocolrelatieve bronnen
   worden uitsluitend als HTTPS geprobeerd; er is geen terugval naar HTTP.
   Maximaal 48 beeldposities en 48 unieke beeldbestemmingen per weergave.
   CID, data-URLs en padrelatieve URL's worden niet weergegeven. Uitklapbare

@@ -47,6 +47,21 @@ export function diagnostics(origin:string){
  <template><img src="/private-fixture-token.png"></template><mail-image data-reason="limit"></mail-image>\r\n`;
 }
 
+export const picturePaths=Array.from({length:23},(_,i)=>`/picture-${i}.png?key=a%2Bb&tile=${i}`);
+export function pictureFixtures(origin:string){
+ const raw=(name:string,html:string)=>headers(`Reader ${name}`)+
+  'Content-Type: multipart/alternative; boundary=picture-fixture\r\n\r\n--picture-fixture\r\n'+
+  'Content-Type: text/plain; charset=utf-8\r\n\r\nPlain picture fixture.\r\n--picture-fixture\r\n'+
+  'Content-Type: text/html; charset=utf-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n'+
+  // Deliberately wrap inside URLs and attributes without splitting an escape.
+  html.split('\n').map(line=>line.replace(/=/g,'=3D').match(/(?:=3D|[^=]){1,23}/g)?.join('=\r\n')??'').join('\r\n')+
+  '\r\n--picture-fixture--\r\n';
+ return [raw('picture',`<h1>Swatches</h1><style>@import '${origin}/private-css';</style>\n`+picturePaths.map((path,i)=>
+  `<p><a href="${origin}/private-link"><picture><source media="(min-width: 1px)" srcset="${origin}/private-art-direction"><source type="image/png" srcset="${origin}/private-large-${i}.png 2x, ${origin}${path.replace('&','&amp;')} 1x"><img alt="Swatch ${i+1}" width="128" height="24"></picture></a></p>`).join('\n')),
+  raw('empty',`<h1>Empty swatches</h1><picture><source srcset="${origin}/private-orphan"></picture>\n`+
+   Array.from({length:23},(_,i)=>`<a href="${origin}/private-link" style="background-image:url(${origin}/private-background)"><img ${i%2?'src=" " ':''}alt="Empty ${i+1}"></a>`).join('\n'))];
+}
+
 export function contrastFixtures(){
  const html=(name:string,body:string)=>headers(`Reader ${name}`)+`Content-Type: text/html; charset=utf-8\r\n\r\n${body}\r\n`;
  return [html('contrast','<h1>Plain heading</h1><p><span style="color:white;background-color:transparent">White text from a dark-mode design</span></p>'+

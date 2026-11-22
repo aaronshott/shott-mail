@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {parseMessage} from '../src/server/inbox.ts';
-import {newsletter,imageOnly,edition,editionImages,studio,diagnostics} from './newsletter-fixture.ts';
+import {newsletter,imageOnly,edition,editionImages,studio,diagnostics,pictureFixtures,picturePaths} from './newsletter-fixture.ts';
 import {formatBody} from '../src/server/format-body.ts';
 
 test('newsletter promotes protocol-relative src to HTTPS and uses eligible data-src as fallback',async()=>{
@@ -89,4 +89,48 @@ test('presentation normalizes only closed grammar values and discards unsupporte
  const body=formatBody(`<div class="main" data-p-width="100%" style="color:rgb(24, 50, 73);max-width:600px;padding:800px;position:relative;background-image:url(https://images.example.test/paper.png);font-family:'Georgia', serif;margin:4px 0"><p align="center" style="text-align:right;padding-left:8px">Paper</p></div>`)!;
  assert.equal(body.markup,'<div data-p-color="#183249" data-p-max-width="600px" data-p-font-family="Georgia, serif" data-p-margin="4px 0px"><p data-p-text-align="right" data-p-padding-left="8px">Paper</p></div>');
  assert.deepEqual(body.images,[]);
+});
+
+test('wrapped quoted-printable MIME recovers 23 picture slots but not 23 truly empty slots',async()=>{
+ const origin='https://images.example.test:4443';
+ const [picture,empty]=await Promise.all(pictureFixtures(origin).map(raw=>parseMessage(Buffer.from(raw))));
+ assert.deepEqual(empty.formatted?.images,[]);
+ assert.deepEqual(empty.formatted?.imageRejections,{missing:23});
+ assert.equal(picture.text.trim(),'Plain picture fixture.');
+ assert.deepEqual({slots:picture.formatted?.images.length,rejections:picture.formatted?.imageRejections},{slots:23,rejections:undefined});
+ assert.deepEqual(picture.formatted?.images,picturePaths.map(path=>origin+path));
+ assert.equal([...picture.formatted!.markup.matchAll(/<mail-image data-index="\d+" data-image-width="128" data-image-height="24">Swatch \d+<\/mail-image>/g)].length,23);
+ assert.doesNotMatch(JSON.stringify([picture.formatted,empty.formatted]),/private-|<picture|<source|\b(?:srcset|href|style)=/);
+});
+
+test('picture fallback is bounded, validates whole declarations, and cannot borrow across structure',()=>{
+ const origin='https://images.example.test';
+ const source=(name:string)=>`<source srcset="${origin}/${name}.png">`;
+ const wrap=(inside:string)=>`<picture>${inside}</picture>`;
+ const nine=Array.from({length:9},(_,i)=>`${origin}/unused.png ${i+1}w`).join(', ');
+ const formatted=formatBody([
+  wrap(source('unused')+`<img src="${origin}/fallback.png">`),
+  wrap(source('unused')+`<img src="/relative" data-src="${origin}/lazy.png">`),
+  wrap(source('unused')+`<img srcset="${origin}/own.png">`),
+  wrap(source('unused')+'<img src="cid:private-cid">'),
+  wrap(`<source srcset="${origin}/unused.png 1x, /bad 2x">${source('eligible')}<img>`),
+  wrap(`<source srcset="${nine}"><img>`),
+  wrap(`<source srcset="https://user:secret@images.example.test/unusable"><img>`),
+  wrap(`<source srcset="https://app.example.test/unusable"><img>`),
+  wrap(`<source srcset="${origin}/unusable 0x"><img src="/existing-diagnosis">`),
+  wrap(`<source type="video/mp4" srcset="${origin}/unused"><img>`),
+  wrap(`<source src="${origin}/unused"><img>`),
+  wrap(source('unused').repeat(9)+'<img>'),
+  source('unused')+'<img>',wrap(source('unused'))+'<img>',
+  wrap('<img>'+source('unused')+'<img>'),
+  wrap(source('unused')+'<div><img></div>'),
+  wrap(`<div>${source('unused')}</div><img>`),
+  wrap(source('unused')+wrap('<img>')),wrap(wrap(source('unused'))+'<img>'),
+  `<video>${source('unused')}</video><img>`,
+  `<template>${wrap(source('unused')+'<img>')}</template>`,
+  `<noscript>${wrap(source('unused')+'<img>')}</noscript>`,
+ ].join(''),'app.example.test')!;
+ assert.deepEqual(formatted.images,['fallback','lazy','own','eligible'].map(name=>`${origin}/${name}.png`));
+ assert.deepEqual(formatted.imageRejections,{missing:10,relative:1,unsupportedAttribute:1,blockedHost:1,credentials:1,srcsetLimit:2,cid:1});
+ assert.doesNotMatch(JSON.stringify(formatted),/unused|secret|private-cid|existing-diagnosis|<picture|<source/);
 });
