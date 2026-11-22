@@ -159,6 +159,16 @@ open de gemelde loopback-URL met `/__test_login?workflow=1` en lees
 `window.multiuserBrowserResult` in de browserconsole. De test gebruikt verse
 synthetische data; de test-loginroute zit niet in productie of het runtime-image.
 
+### Runtime-packagingtest zonder Docker
+
+Voer na `npm ci --ignore-scripts` en `npm run build` ook `npm run test:runtime`
+uit. De test volgt de `COPY`-regels van de laatste Dockerfile-stage in een
+aparte tijdelijke map en installeert daar alleen productieafhankelijkheden uit
+de lokale npm-cache. Hij voert de verpakte `CMD` en `HEALTHCHECK` uit op loopback,
+zonder mailverbindingen, met een vooraf gevulde synthetische SQLite-database en
+nieuwe tijdelijke secrets. Dit test de app-bestanden en opstart, niet het
+Docker-baseimage, de containergebruiker of de container-healthstatus.
+
 ## Docker-teststack op Aärons eigen host — nog niet uitgevoerd
 
 Handmatig broncode op exact gekozen commit bouwen; geen gepubliceerde app-image,
