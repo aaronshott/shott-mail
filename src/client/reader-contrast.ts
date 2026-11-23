@@ -15,7 +15,7 @@ export function protectReaderContrast(reader:HTMLElement){
  // Only nontransparent sender paint should select the existing white mail canvas.
  reader.classList.toggle('mail-authored-palette',authored.some(el=>
   el.style.backgroundColor&&luminance(getComputedStyle(el).backgroundColor)!==null));
- const nodes=[...reader.querySelectorAll<HTMLElement>('*')].filter(el=>!el.classList.contains('mail-image-placeholder'));
+ const nodes=[...reader.querySelectorAll<HTMLElement>('*')].filter(el=>!el.closest('.mail-image-placeholder'));
  const overrides=new Map<HTMLElement,string>();
  function refresh(){
   for(const [el,color] of overrides)el.style.color=color;

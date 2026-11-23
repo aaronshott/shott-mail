@@ -69,13 +69,23 @@ a{color:var(--link)}
  /* The desktop cell widths of these rows are preferences, not reservations
     that should squeeze both the artwork and text on narrow screens. */
  .formatted-mail table[role=presentation]:not(.mail-stack-columns)>:is(thead,tbody,tfoot)>tr:has(>td>.mail-image-short)>td{width:auto!important;overflow-wrap:break-word}
- .formatted-mail .mail-stack-columns,.formatted-mail .mail-stack-columns>:is(thead,tbody,tfoot),
- .formatted-mail .mail-stack-columns>:is(thead,tbody,tfoot)>tr{display:block}
- .formatted-mail .mail-stack-columns>:is(thead,tbody,tfoot)>tr>td{display:block;width:100%!important}
+ /* A shared image-notice row must remain a row until the notice is replaced. */
+ .formatted-mail .mail-stack-columns:not(:has(>:is(thead,tbody,tfoot)>tr>.mail-image-cell)){
+  &, &>:is(thead,tbody,tfoot), &>:is(thead,tbody,tfoot)>tr{display:block}
+  &>:is(thead,tbody,tfoot)>tr>td{display:block;width:100%!important}
+ }
 }
 .mail-image-placeholder{display:inline-block;max-inline-size:100%;padding:.15em .45em;margin-block:.15em;border-radius:.25em;background:var(--badge);color:var(--muted);font-size:.9em}
 .mail-image-placeholder.mail-image-glyph{inline-size:1rem;block-size:1rem;margin:0;padding:0;text-align:center;vertical-align:middle;color:var(--ink);font: .875rem/1rem system-ui,sans-serif}
 .mail-image-glyph::before{content:'▧' / ''}
+.formatted-mail .mail-image-cell{position:relative}
+/* Keep the notice out of both axes of table sizing. The rendered cell clips
+   even the marker at very small sizes; wider cells show a single line of alt. */
+.mail-image-placeholder.mail-image-in-row{position:absolute;inset-block:0;inset-inline-start:0;margin-block:auto;margin-inline:0;padding:0;
+ block-size:1rem;max-block-size:100%;max-inline-size:100%;overflow:hidden;white-space:nowrap}
+.mail-image-in-row:not(.mail-image-glyph){display:flex;align-items:center;font:.875rem/1rem system-ui,sans-serif;color:var(--ink)}
+.mail-image-in-row:not(.mail-image-glyph)::before{content:'▧' / '';flex:0 0 1rem;text-align:center}
+.mail-image-alt{min-inline-size:0;overflow:hidden;text-overflow:ellipsis}
 .mail-image-frame,.formatted-mail iframe{display:block;inline-size:100%;min-inline-size:0}
 .formatted-mail iframe{block-size:clamp(5rem,24cqi,12rem);border:0;background:transparent;color-scheme:light}
 .formatted-mail .mail-image-centered{margin-inline:auto}

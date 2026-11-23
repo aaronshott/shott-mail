@@ -135,6 +135,38 @@ export async function preconsentCrop(theme){
   overflow:body.scrollWidth>body.clientWidth||document.documentElement.scrollWidth>innerWidth,requests:await requests(),connections:await connections()};
 }
 
+export async function unhintedCrop(theme){
+ await openNewsletter('unhinted');
+ document.documentElement.dataset.theme=theme;
+ const body=reader().querySelector('.formatted-mail');
+ assert(button('Load remote images')&&button('Load all')&&!reader().querySelector('dialog,iframe'),'consent boundary changed');
+ assert(!body.querySelector('img,link,style,script,[src],[srcset],[href],[background]')&&
+  [...body.querySelectorAll('[style]')].every(el=>!el.style.cssText.includes('url(')),'active resource in Safe HTML');
+ body.scrollIntoView({block:'start'});await pause(300);
+ const box=el=>el.getBoundingClientRect();
+ const rows=[...body.querySelectorAll('tr')].filter(row=>row.cells.length>1&&row.querySelector('.mail-image-placeholder'));
+ const geometry=rows.map(row=>{
+  const slot=row.querySelector('.mail-image-placeholder'),cell=slot.closest('td'),table=cell.closest('table');
+  const range=document.createRange();range.selectNodeContents(slot);
+  const title=row.querySelector('strong')??row.querySelector('th');
+  const alt=slot.querySelector('.mail-image-alt')??slot;
+  const info={height:box(row).height,cell:box(cell).width,slotWidth:box(slot).width,lines:new Set([...range.getClientRects()].map(r=>r.y)).size,
+   sameRow:box(cell).top===box(title.closest('td,th')).top,fg:getComputedStyle(title).color,bg:getComputedStyle(table).backgroundColor,
+   backgroundImage:getComputedStyle(table).backgroundImage,alt:alt.textContent,altWidth:alt.clientWidth,altScrollWidth:alt.scrollWidth};
+  slot.style.display='none';info.withoutLabel=box(row).height;slot.style.removeProperty('display');
+  return info;
+ });
+ const grid=body.querySelector('table:has(caption)'),head=[...grid.tHead.rows[0].cells];
+ return {width:body.clientWidth,geometry,grid:{caption:grid.caption.textContent,role:grid.getAttribute('role'),
+  scope:[head[0].scope,grid.tBodies[0].rows[0].cells[0].scope],border:getComputedStyle(head[0]).borderTopWidth,
+  aligns:[...grid.tBodies[0].rows[0].cells].map(c=>getComputedStyle(c).textAlign),
+  tracks:head.map(c=>box(c).width),width:box(grid).width,
+  aligned:[...grid.tBodies[0].rows].every(r=>[...r.cells].every((c,i)=>box(c).x===box(head[i]).x))},
+  standalone:[...body.querySelectorAll('p .mail-image-placeholder,tr:has(>td:only-child) .mail-image-placeholder')].map(e=>[e.textContent,e.checkVisibility(),getComputedStyle(e).position]),
+  reasons:[...reader().querySelectorAll('.image-source-summary li')].map(e=>e.textContent),
+  overflow:body.scrollWidth>body.clientWidth||document.documentElement.scrollWidth>innerWidth,requests:await requests(),connections:await connections()};
+}
+
 export async function headerAfter(){
  const body=reader().querySelector('.formatted-mail');
  const frames=[...body.querySelectorAll('iframe')];

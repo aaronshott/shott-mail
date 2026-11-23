@@ -9,7 +9,7 @@ import {runHeader} from './browser-header.mjs';
 import {runFullReader} from './browser-full-reader.mjs';
 import {editionImages,picturePaths} from './newsletter-fixture.ts';
 const chrome=process.argv[2];if(!chrome)throw Error('Pass an absolute Chrome/Chromium path');
-const workflows=process.argv.length>3?process.argv.slice(3):['folders','context','composer','b1','users','settings','reply-nl','reply-en','reader-nl','reader-en','diagnostics-nl','diagnostics-en','newsletter','edition','studio','picture','contrast','header-light','header-dark','tree-light','tree-dark','full-reader','preconsent-light','preconsent-dark'];
+const workflows=process.argv.length>3?process.argv.slice(3):['folders','context','composer','b1','users','settings','reply-nl','reply-en','reader-nl','reader-en','diagnostics-nl','diagnostics-en','newsletter','edition','studio','picture','contrast','header-light','header-dark','tree-light','tree-dark','full-reader','preconsent-light','preconsent-dark','unhinted-light','unhinted-dark'];
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 await mkdir('.test-data',{recursive:true,mode:0o700});
 const profile=await mkdtemp(resolve('.test-data/browser-chrome-'));
@@ -27,7 +27,8 @@ try{
   const readerLocale=kind==='reader-nl'?'nl':kind==='reader-en'?'en':null;
   const diagnosticsLocale=kind==='diagnostics-nl'?'nl':kind==='diagnostics-en'?'en':null;
   const header=kind==='header-light'?'light':kind==='header-dark'?'dark':null;
-  const preconsent=kind.startsWith('preconsent-')?kind.slice(11):null;
+  const unhinted=kind.startsWith('unhinted-');
+  const preconsent=unhinted?kind.slice(9):kind.startsWith('preconsent-')?kind.slice(11):null;
   const full=kind==='full-reader',studio=kind==='studio',edition=kind==='edition',picture=kind==='picture',garden=kind==='newsletter'||kind==='contrast'||edition||studio||picture||header||preconsent,needsImage=readerLocale||garden||diagnosticsLocale||full;
   const treeTheme=kind==='tree-light'?'light':kind==='tree-dark'?'dark':null;
   const h=start(process.execPath,['tests/browser-harness.ts',...(full?['--full-reader']:garden?['--newsletter']:diagnosticsLocale?['--reader','--diagnostics']:readerLocale?['--reader']:replyLocale?['--reply-subjects']:kind==='context'?['--folders','--context']:treeTheme?['--folders','--tree-style']:kind==='settings'?['--folders']:['folders','composer'].includes(kind)?[`--${kind}`]:[])]);
@@ -97,7 +98,25 @@ try{
      if(mobile){await call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point]});await call('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});}
      else for(const type of ['mousePressed','mouseReleased'])await call('Input.dispatchMouseEvent',{type,...point,button:'left',clickCount:1});
     };
-    if(preconsent){
+    if(unhinted){
+     const g=record.before=await run('unhintedCrop',JSON.stringify(preconsent));
+     await shot(kind,true);
+     const {nodes}=await call('Accessibility.getFullAXTree');
+     record.names=nodes.filter(n=>n.role?.value==='image').map(n=>n.name?.value);
+     record.externalRequests=external;
+     if(external.length||g.connections||g.requests.length||imageFrames.size)throw Error('External resource activity before consent');
+     if(g.geometry.length!==9||g.geometry.some(r=>Math.abs(r.height-r.withoutLabel)>.5||!r.sameRow||r.lines!==1||r.slotWidth>r.cell+.5)||g.overflow)throw Error('Image notice affected shared row geometry');
+     if([0,1,2,3].some((i)=>Math.abs(g.geometry[i].cell-[24,9,34,52][i])>2)||Math.abs(g.geometry[4].cell/g.width-.08)>.01||
+      g.geometry[1].altWidth!==0||g.geometry[5].cell<.45*g.width)throw Error('Unexpected cell widths or clipping');
+     if(g.geometry.some((r,i)=>i!==5&&i!==8&&(r.bg!=='rgb(24, 38, 58)'||r.fg!=='rgb(245, 249, 255)'))||g.geometry[5].bg!=='rgba(0, 0, 0, 0)'||g.geometry[5].backgroundImage!=='none')throw Error('Unexpected sender palette or stylesheet applied');
+     if(!g.grid.aligned||g.grid.role||g.grid.caption!=='Instrument readings'||g.grid.scope.join()!=='col,row'||g.grid.border!=='1px'||g.grid.aligns[1]!=='right'||
+      g.grid.tracks.some((w,i)=>Math.abs(w/g.grid.width-[.48,.29,.23][i])>.02))throw Error('Data grid changed');
+     if(record.names.filter(n=>n.startsWith('Remote image blocked — Observatory symbol')).length!==8||!record.names.some(n=>n.endsWith('Parent inline CSS'))||
+      !record.names.some(n=>n.includes('Unavailable inline symbol'))||!g.reasons.includes('Relative source: 1')||!g.reasons.includes('Embedded and not displayed: 1')||
+      g.standalone.length!==3||g.standalone.some(([text,visible,position])=>!text||!visible||position==='absolute')||
+      !g.geometry[6].alt.includes('Wide illustration')||g.geometry[6].altWidth<100||g.geometry[6].altScrollWidth<=0)throw Error('Meaningful alternative or diagnostic missing');
+     record.result={passed:true};
+    }else if(preconsent){
      const g=record.before=await run('preconsentCrop',JSON.stringify(preconsent));
      await shot(kind,true);
      const {nodes}=await call('Accessibility.getFullAXTree');

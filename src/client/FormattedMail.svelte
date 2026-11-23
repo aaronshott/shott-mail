@@ -19,27 +19,46 @@
  const placeholders=[];
  const hasText=el=>[...el.childNodes].some(n=>n.nodeType===Node.TEXT_NODE&&n.textContent.trim());
  const onlyChild=(el,test)=>!hasText(el)&&el.children.length===1&&test(el.firstElementChild);
- function onlyCompactImage(el){
+ function onlyImage(el){
   while(el.localName==='td'||el.localName==='span'){
-   if(!hasText(el)&&el.children.length===1)el=el.firstElementChild;
-   else return false;
-   if(el.classList.contains('mail-image-glyph'))return true;
+   if(hasText(el)||el.children.length!==1)return null;
+   el=el.firstElementChild;
+   if(el.classList.contains('mail-image-placeholder'))return el;
   }
-  return false;
+  return null;
  }
+ const hasLiveCellText=cell=>cell.textContent.trim()&&!cell.querySelector('table,.mail-image-placeholder');
  function styleTable(table,layout){
   const rows=[...table.rows];
   const simple=rows.length&&!table.caption&&!table.tHead&&!table.tFoot&&rows.every(row=>
    row.cells.length&&[...row.cells].every(c=>c.localName==='td'&&c.colSpan===1&&c.rowSpan===1));
   const cells=rows.length===1?[...rows[0].cells]:[];
-  const leadingIcon=simple&&cells.length>=2&&onlyCompactImage(cells[0])&&
-   cells.slice(1).some(c=>c.textContent.trim()&&!c.querySelector('table,.mail-image-placeholder'));
+  const leadingIcon=simple&&cells.length>=2&&onlyImage(cells[0])?.classList.contains('mail-image-glyph')&&
+   cells.slice(1).some(hasLiveCellText);
   // border=0 alone is not evidence of layout. Only style structural wrappers
   // and icon/label rows; do not change the accessibility role of inferred tables.
   if(layout==='borderless-candidate'&&simple&&(leadingIcon||rows.every(row=>
    row.cells.length===1&&onlyChild(row.cells[0],el=>el.localName==='table'))))table.classList.add('mail-layout-table');
   if(layout==='presentation'&&!leadingIcon&&cells.length>=2&&cells.length<=3&&
    cells.every(c=>c.localName==='td'&&c.colSpan===1&&c.rowSpan===1))table.classList.add('mail-stack-columns');
+  for(const row of rows){
+   const rowCells=[...row.cells];
+   if(!rowCells.some(hasLiveCellText))continue;
+   for(const cell of rowCells){
+    const slot=cell.rowSpan===1&&onlyImage(cell);
+    if(!slot)continue;
+    // A notice beside live text isn't row content. Let the actual cell box
+    // constrain it, regardless of hints or the localized notice's length.
+    cell.classList.add('mail-image-cell');
+    slot.classList.add('mail-image-in-row');
+    slot.setAttribute('role','img');
+    slot.setAttribute('aria-label',slot.title);
+    if(!slot.classList.contains('mail-image-glyph')){
+     const detail=document.createElement('span');detail.className='mail-image-alt';
+     detail.textContent=slot.textContent;slot.replaceChildren(detail);
+    }
+   }
+  }
  }
 
  onMount(()=>{
@@ -74,9 +93,10 @@
       label=t('remoteImageBlocked');placeholders.push({slot,url,alt,width,height});
      }else if(!generic)label=t(isInline?'inlineImageUnavailable':'imageLimitReached');
      const name=label?(alt?`${label} — ${alt}`:label):alt;
+     slot.title=name;
      if(width&&Number(width)<=32&&(!height||Number(height)<=32)){
       slot.classList.add('mail-image-glyph');
-      slot.setAttribute('role','img');slot.setAttribute('aria-label',name);slot.title=name;
+      slot.setAttribute('role','img');slot.setAttribute('aria-label',name);
      }else slot.textContent=name;
     }else if(safeFormattingTags.has(tag)){
      const el=document.createElement(tag);
@@ -163,6 +183,7 @@
    frame.title=alt||t('remoteImage');
    // The sandbox is opaque: use native image alt fallback rather than treating frame load as image success.
    frame.srcdoc=imageFrameDocument(url,alt||t('remoteImageUnavailable'));
+   if(slot.classList.contains('mail-image-in-row'))slot.closest('td').classList.remove('mail-image-cell');
    for(const attr of ['role','aria-label','title'])slot.removeAttribute(attr);
    slot.className='mail-image-frame';slot.replaceChildren(frame);
    if(width){
