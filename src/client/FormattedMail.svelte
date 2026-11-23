@@ -164,9 +164,9 @@
  <dialog class="full-reader-dialog" bind:this={fullDialog} aria-label={subject}
   oncancel={event=>{event.preventDefault();resetFull();}}>
   <div class="full-reader-toolbar">
-   <button type="button" bind:this={backSafe} onclick={resetFull}>{t('backSafeReader')}</button>
-   <button type="button" aria-expanded={showInfo} aria-controls="full-reader-info" onclick={()=>showInfo=!showInfo}>{t('fullReaderInfo')}</button>
-   <button type="button" onclick={focusFullDocument}>{t('fullReaderRead')}</button>
+   <button type="button" bind:this={backSafe} onclick={resetFull} aria-label={t('backSafeReader')} title={t('backSafeReader')}><span>{t('backSafeReader')}</span><span class="compact-label" aria-hidden="true">{t('backSafeReaderShort')}</span></button>
+   <button type="button" aria-expanded={showInfo} aria-controls="full-reader-info" onclick={()=>showInfo=!showInfo} aria-label={t('fullReaderInfo')} title={t('fullReaderInfo')}><span>{t('fullReaderInfo')}</span><span class="compact-label" aria-hidden="true">{t('fullReaderInfoShort')}</span></button>
+   <button type="button" onclick={focusFullDocument} aria-label={t('fullReaderRead')} aria-description={t('fullReaderKeyboardExit')} title={t('fullReaderKeyboardExit')}><span>{t('fullReaderRead')}</span><span class="compact-label" aria-hidden="true">{t('fullReaderReadShort')}</span></button>
   </div>
   <!-- svelte-ignore a11y_no_noninteractive_tabindex (keyboard users must be able to enter the scrollable document) -->
   <iframe class="full-mail-document" title={t('fullReaderTitle')} sandbox="" referrerpolicy="no-referrer" src={fullPath} bind:this={fullFrame} tabindex="0" inert={showInfo}></iframe>
@@ -219,6 +219,20 @@
   margin:0;padding:0;border:0;overflow:clip;background:var(--surface);color:var(--ink)}
  .full-reader-toolbar{display:flex;flex-wrap:wrap;gap:4px 8px;padding:6px 8px}
  .full-reader-toolbar button{max-inline-size:100%;overflow-wrap:anywhere}
+ .full-reader-toolbar .compact-label{display:none}
+ /* Keep space for the document at high zoom or in a short window, without
+    reducing the type size or creating a second scrolling area. */
+ @media (max-width:240px), (max-height:210px){
+  .full-reader-toolbar{gap:2px;padding:3px}
+  .full-reader-toolbar button{min-inline-size:44px;padding:0 2px}
+  .full-reader-toolbar button:focus-visible{outline-offset:-4px}
+  .full-reader-toolbar button span{display:none}
+  .full-reader-toolbar .compact-label{display:inline}
+ }
+ @media (max-width:170px) and (max-height:210px){
+  .full-reader-toolbar{padding-block:2px}
+  .full-reader-toolbar button{min-inline-size:40px;min-block-size:28px}
+ }
  .full-mail-document,.full-reader-info{grid-area:2/1;min-inline-size:0;min-block-size:0}
  .full-mail-document{display:block;inline-size:100%;block-size:100%;border:0;background:transparent;color-scheme:light}
  .full-mail-document[inert]{visibility:hidden}

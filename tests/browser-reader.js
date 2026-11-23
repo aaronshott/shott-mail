@@ -1,7 +1,7 @@
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 const assert=(v,m)=>{if(!v)throw Error(m);};
 async function until(fn,m){for(let i=0;i<240;i++){if(await fn())return;await pause(25);}throw Error(m);}
-const button=text=>[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===text);
+const button=text=>[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===text||b.getAttribute('aria-label')===text);
 const click=text=>{const b=button(text);assert(b&&!b.disabled,'Missing/disabled: '+text);b.click();};
 const set=(el,value)=>{el.value=value;el.dispatchEvent(new Event('change',{bubbles:true}));};
 const idle=async()=>{await pause(20);await until(()=>{const b=button('Uitloggen')??button('Sign out');return b&&!b.disabled;},'app stayed busy');};

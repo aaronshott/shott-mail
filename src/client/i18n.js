@@ -12,6 +12,8 @@ const catalog={
  fullReaderRequested:['Volledige opmaak aangevraagd. Externe onderdelen kunnen ontbreken; de veilige weergave en platte tekst blijven beschikbaar.','Full layout requested. External resources may be missing; the safe view and plain text remain available.'],
  fullReaderInfo:['Berichtopties','Message options'],
  fullReaderRead:['Lees bericht','Read message'],
+ backSafeReaderShort:['Veilig','Safe'],fullReaderInfoShort:['Opties','Options'],fullReaderReadShort:['Lees','Read'],
+ fullReaderKeyboardExit:['Druk in het bericht op Shift+Tab om terug te gaan naar de knoppen. Druk daarna op Escape voor de veilige weergave.','From the message, press Shift+Tab to return to the toolbar, then Escape to return to safe view.'],
  fullReaderFailed:['De volledige weergave kon niet worden geopend.','The full view could not be opened.'],
  savePreferences:['Instellingen opslaan','Save settings'], preferencesSaved:['Persoonlijke instellingen opgeslagen.','Personal settings saved.'], back:['Terug','Back'],
  loginTitle:['Een rustige plek voor je mail.','A quiet place for your mail.'], loginIntro:['Meld aan met je eigen Shott Mail-account. Nog geen account? Vraag je beheerder.','Sign in with your own Shott Mail account. Need an account? Ask your administrator.'],

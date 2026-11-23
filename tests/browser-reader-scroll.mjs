@@ -37,8 +37,8 @@ export async function shortReaderGeometry({evaluate,poll,child,shot}){
 export async function runReaderScroll({call,evaluate,poll,child,run,gesture,mobile,shot,locale,assets,connections}){
  const getShell=()=>evaluate(shellState);
  const measure=()=>child(newsletter);
- const press=async (key,code)=>{
-  for(const type of ['keyDown','keyUp'])await call('Input.dispatchKeyEvent',{type,key,code:key===' '?'Space':key,windowsVirtualKeyCode:code,...(type==='keyDown'&&key===' '?{text:' '}:{} )});
+ const press=async (key,code,modifiers=0)=>{
+  for(const type of ['keyDown','keyUp'])await call('Input.dispatchKeyEvent',{type,key,code:key===' '?'Space':key,windowsVirtualKeyCode:code,modifiers,...(type==='keyDown'&&key===' '?{text:' '}:{} )});
  };
  const pointFor=selector=>evaluate(`(()=>{const b=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:b.x+b.width/2,y:b.y+b.height/2}})()`);
  const interact=async (point,direction)=>{
@@ -141,7 +141,19 @@ export async function runReaderScroll({call,evaluate,poll,child,run,gesture,mobi
  assert.ok(await evaluate("document.querySelector('.full-reader-info').hidden"));
  assert.equal((await measure()).y,resizedFooter.y);
  if(mobile)await gesture(await pointFor('.full-reader-toolbar button:first-child'));
- else await press('Escape',27);
+ else{
+  // Chromium does not deliver native dialog cancellation while the opaque
+  // document has focus. The frame follows Read message in the tab order.
+  const read='.full-reader-toolbar button:last-child';
+  await press('Tab',9);
+  await poll(()=>evaluate(`document.activeElement.matches('${read}[aria-description]')`));
+  await press(' ',32);
+  await poll(()=>child('document.hasFocus()'));
+  await press('Tab',9,8);
+  await poll(()=>evaluate(`document.activeElement.matches('${read}')`));
+  assert.equal(await child('document.hasFocus()'),false);
+  await press('Escape',27);
+ }
  await poll(()=>evaluate("!document.querySelector('.full-mail-document') && document.activeElement.matches('.full-reader-controls button')"));
  const afterReset=await getShell();assert.equal(afterReset,null);
  const again=await run('fullOpenLong',JSON.stringify(locale));
