@@ -309,8 +309,8 @@
      {#if reader}
       <button onclick={closeReader}>{t('backToList')}</button><span class="tag">{reader.accountLabel} · {reader.address}</span>
       <h2 id="readtitle" tabindex="-1">{reader.subjectMissing?t('noSubject'):reader.subject}</h2><p>{reader.from}</p><p class="note">{t('safeView')}</p>
-      {#if readerFormat==='html'&&reader.formatted}
-       {#key reader}<FormattedMail body={reader.formatted} text={reader.text} {t}/>{/key}
+      {#if readerFormat==='html'&&(reader.formatted||reader.readerIdentity)}
+       {#key reader}<FormattedMail body={reader.formatted} text={reader.text} {t} requestDocument={reader.readerIdentity?()=>api('/api/reader/document','POST',reader.readerIdentity):null}/>{/key}
       {:else}
        {#if readerFormat==='html'&&reader.htmlUnavailable}<p class="note">{t('htmlUnavailable')}</p>
        {:else if readerFormat!=='html'&&reader.formatted?.images.length}<p class="note">{t('plainImageNote')}</p>{/if}

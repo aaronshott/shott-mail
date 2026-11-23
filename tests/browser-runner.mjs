@@ -6,9 +6,10 @@ import {mkdir,mkdtemp,readFile,rm,writeFile} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {runTreeStyle} from './browser-tree-style.mjs';
 import {runHeader} from './browser-header.mjs';
+import {runFullReader} from './browser-full-reader.mjs';
 import {editionImages,picturePaths} from './newsletter-fixture.ts';
 const chrome=process.argv[2];if(!chrome)throw Error('Pass an absolute Chrome/Chromium path');
-const workflows=process.argv.length>3?process.argv.slice(3):['folders','context','composer','b1','users','settings','reply-nl','reply-en','reader-nl','reader-en','diagnostics-nl','diagnostics-en','newsletter','edition','studio','picture','contrast','header-light','header-dark','tree-light','tree-dark'];
+const workflows=process.argv.length>3?process.argv.slice(3):['folders','context','composer','b1','users','settings','reply-nl','reply-en','reader-nl','reader-en','diagnostics-nl','diagnostics-en','newsletter','edition','studio','picture','contrast','header-light','header-dark','tree-light','tree-dark','full-reader'];
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 await mkdir('.test-data',{recursive:true,mode:0o700});
 const profile=await mkdtemp(resolve('.test-data/browser-chrome-'));
@@ -26,14 +27,14 @@ try{
   const readerLocale=kind==='reader-nl'?'nl':kind==='reader-en'?'en':null;
   const diagnosticsLocale=kind==='diagnostics-nl'?'nl':kind==='diagnostics-en'?'en':null;
   const header=kind==='header-light'?'light':kind==='header-dark'?'dark':null;
-  const studio=kind==='studio',edition=kind==='edition',picture=kind==='picture',garden=kind==='newsletter'||kind==='contrast'||edition||studio||picture||header,needsImage=readerLocale||garden||diagnosticsLocale;
+  const full=kind==='full-reader',studio=kind==='studio',edition=kind==='edition',picture=kind==='picture',garden=kind==='newsletter'||kind==='contrast'||edition||studio||picture||header,needsImage=readerLocale||garden||diagnosticsLocale||full;
   const treeTheme=kind==='tree-light'?'light':kind==='tree-dark'?'dark':null;
-  const h=start(process.execPath,['tests/browser-harness.ts',...(garden?['--newsletter']:diagnosticsLocale?['--reader','--diagnostics']:readerLocale?['--reader']:replyLocale?['--reply-subjects']:kind==='context'?['--folders','--context']:treeTheme?['--folders','--tree-style']:kind==='settings'?['--folders']:['folders','composer'].includes(kind)?[`--${kind}`]:[])]);
-  let origin,imageOrigin,tab,ws,harnessOutput='';h.stdout.on('data',chunk=>{harnessOutput+=chunk;const match=/BROWSER_HARNESS (http:\/\/127\.0\.0\.1:\d+)(?: (https:\/\/images\.example\.test:\d+))?\r?\n/.exec(harnessOutput);if(match)[,origin,imageOrigin]=match;});
+  const h=start(process.execPath,['tests/browser-harness.ts',...(full?['--full-reader']:garden?['--newsletter']:diagnosticsLocale?['--reader','--diagnostics']:readerLocale?['--reader']:replyLocale?['--reply-subjects']:kind==='context'?['--folders','--context']:treeTheme?['--folders','--tree-style']:kind==='settings'?['--folders']:['folders','composer'].includes(kind)?[`--${kind}`]:[])]);
+  let origin,imageOrigin,tab,ws,harnessOutput='';h.stdout.on('data',chunk=>{harnessOutput+=chunk;const match=/BROWSER_HARNESS (https?:\/\/127\.0\.0\.1:\d+)(?: (https:\/\/images\.example\.test:\d+))?\r?\n/.exec(harnessOutput);if(match)[,origin,imageOrigin]=match;});
   try{
    await poll(()=>origin);tab=await (await fetch(endpoint+'/json/new?about:blank',{method:'PUT'})).json();
    ws=new WebSocket(tab.webSocketDebuggerUrl);await new Promise((r,j)=>{ws.onopen=r;ws.onerror=j;});
-   let seq=0;const pending=new Map(),observed=[],imageFrames=new Map();
+   let seq=0;const pending=new Map(),observed=[],imageFrames=new Map(),responses=[];
    const call=(method,params={},sessionId)=>new Promise((r,j)=>{
     const id=++seq,timer=setTimeout(()=>{pending.delete(id);j(Error(method+' timeout'));},45000);
     pending.set(id,(value,error)=>{pending.delete(id);clearTimeout(timer);error?j(Error(error.message)):r(value);});ws.send(JSON.stringify({id,method,params,sessionId}));
@@ -48,9 +49,13 @@ try{
      call('Network.enable',{},sessionId).then(()=>call('Runtime.runIfWaitingForDebugger',{},sessionId)).catch(()=>{});
     }
     if(method==='Target.detachedFromTarget')for(const [frameId,sessionId] of imageFrames)if(sessionId===params.sessionId)imageFrames.delete(frameId);
+    if(full&&method==='Network.responseReceived'){
+     const {url,status,headers}=params.response,{origin,pathname:path}=new URL(url);
+     if(path==='/api/reader/document'||path==='/full-mail.css')responses.push({origin,path,status,headers:Object.fromEntries(Object.entries(headers).map(([k,v])=>[k.toLowerCase(),v]))});
+    }
     if(method==='Network.requestWillBeSent'&&[imageOrigin,imageOrigin.replace('images.','cdn.')].includes(new URL(params.request.url).origin))observed.push(new URL(params.request.url).pathname);
    };
-   await call('Emulation.setDeviceMetricsOverride',{width:mobile?(replyLocale||readerLocale?320:390):(header?1600:1280),height:mobile?844:900,deviceScaleFactor:mobile&&!header?3:1,mobile});
+   await call('Emulation.setDeviceMetricsOverride',{width:mobile?(replyLocale||readerLocale?320:390):(header||full?1600:1280),height:mobile?844:900,deviceScaleFactor:mobile&&!header&&!full?3:1,mobile});
    await call('Emulation.setTouchEmulationEnabled',{enabled:mobile});
    if(treeTheme||kind==='settings')await call('Emulation.setEmulatedMedia',{features:[{name:'prefers-color-scheme',value:treeTheme??'dark'}]});
    if(needsImage){
@@ -72,8 +77,8 @@ try{
    else if(treeTheme)record.result=await runTreeStyle({call,evaluate,poll,mobile,theme:treeTheme,baseline:process.env.FOLDER_TREE_BASELINE==='1',screenshots:process.env.FOLDER_TREE_SCREENSHOTS});
    else if(kind==='context')record.result=await evaluate("import('/__test_folder_context.js').then(m=>m.runContext())",true);
    else if(replyLocale)record.result=await evaluate(`import('/__test_reply_subjects.js').then(m=>m.runReplySubjects(${JSON.stringify(replyLocale)}))`,true);
-   else if(garden||diagnosticsLocale){
-    const baseline=process.env.NEWSLETTER_BASELINE==='1',dir=process.env.NEWSLETTER_SCREENSHOTS;
+   else if(garden||diagnosticsLocale||full){
+    const baseline=process.env.NEWSLETTER_BASELINE==='1',dir=full?process.env.FULL_READER_SCREENSHOTS:process.env.NEWSLETTER_SCREENSHOTS;
     const run=(method,arg='')=>evaluate(`import('/__test_reader.js').then(m=>m.${method}(${arg}))`,true);
     const shot=async (name,viewportOnly=false)=>{
      if(!dir)return;
@@ -87,7 +92,9 @@ try{
      if(mobile){await call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point]});await call('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});}
      else for(const type of ['mousePressed','mouseReleased'])await call('Input.dispatchMouseEvent',{type,...point,button:'left',clickCount:1});
     };
-    if(header){
+    if(full){
+     record.result=await runFullReader({call,evaluate,poll,run,gesture,imageFrames,observed,origin,mobile,shot,responses});
+    }else if(header){
      record.result=await runHeader({call,evaluate,poll,run,gesture,imageFrames,observed,origin,mobile,record,theme:header,dir:process.env.HEADER_SCREENSHOTS});
     }else if(diagnosticsLocale){
      const lang=JSON.stringify(diagnosticsLocale);

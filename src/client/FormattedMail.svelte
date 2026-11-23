@@ -5,21 +5,22 @@
  import {imageFrameDocument} from '../image-frame.ts';
  import {protectReaderContrast} from './reader-contrast.ts';
 
- let {body,text,t}=$props();
+ let {body,text,t,requestDocument}=$props();
  let target=$state(),status=$state(),available=$state(false),usable=$state(true),consented=$state(false);
+ let fullPath=$state(''),pending=$state(false),fullError=$state(false),fullToggle=$state(),active=true;
  let unsupportedSources=$state(0),limited=$state(0),inline=$state(0),rendererRejected=$state(0);
  const reasons=imageRejections.filter(reason=>reason!=='cid'&&reason!=='limit');
  const count=reason=>{
-  const value=body.imageRejections?.[reason];
+  const value=body?.imageRejections?.[reason];
   return Number.isInteger(value)&&value>0&&value<=4000?value:0;
  };
- const sourceTotal=$derived(body.imageRejections?reasons.reduce((sum,reason)=>sum+count(reason),0):unsupportedSources);
+ const sourceTotal=$derived(body?.imageRejections?reasons.reduce((sum,reason)=>sum+count(reason),0):unsupportedSources);
  const placeholders=[];
 
  onMount(()=>{
   // Parse in a detached, inert template. Rebuild; never insert its nodes or copy attributes wholesale.
   const template=document.createElement('template');
-  template.innerHTML=body.markup;
+  template.innerHTML=body?.markup??'';
   let unsupported=0,overBudget=0,embedded=0,rejectedAtRender=0;
   function copy(from,to,inheritedPadding=null){
    for(const node of from.childNodes){
@@ -80,8 +81,24 @@
   inline=embedded;
   rendererRejected=rejectedAtRender;
   usable=!!target.textContent.trim();
-  return protectReaderContrast(target);
+  const cleanup=protectReaderContrast(target);
+  return ()=>{active=false;cleanup();};
  });
+
+ async function allowAll(event){
+  if(!event.isTrusted||pending||fullPath||!requestDocument)return;
+  pending=true;fullError=false;
+  try{
+   const {path}=await requestDocument();
+   if(!active)return;
+   if(!/^\/api\/reader\/document\?view=[a-zA-Z0-9_-]{32}$/.test(path))throw Error('Invalid view');
+   fullPath=path;
+   await tick();fullToggle?.focus({preventScroll:true});
+  }catch{if(active)fullError=true;}
+  finally{if(active)pending=false;}
+ }
+
+ async function resetFull(){fullPath='';await tick();fullToggle?.focus({preventScroll:true});}
 
  async function allowImages(event){
   if(!event.isTrusted||consented||!available)return;
@@ -124,6 +141,21 @@
  }
 </script>
 
+{#if requestDocument}
+ <div class="full-reader-controls">
+  {#if fullPath}
+   <button type="button" bind:this={fullToggle} onclick={resetFull}>{t('backSafeReader')}</button>
+  {:else}
+   <button type="button" bind:this={fullToggle} aria-describedby="full-reader-privacy" disabled={pending} onclick={allowAll}>{t('loadAll')}</button>
+  {/if}
+  <p id="full-reader-privacy" class="note">{t(fullPath?'fullReaderRequested':'fullReaderPrivacy')}</p>
+  {#if fullError}<p role="status">{t('fullReaderFailed')}</p>{/if}
+ </div>
+{/if}
+{#if fullPath}
+ <iframe class="full-mail-document" title={t('fullReaderTitle')} sandbox="" referrerpolicy="no-referrer" src={fullPath}></iframe>
+{/if}
+<div hidden={!!fullPath}>
 {#if available}
  <div class="image-controls">
   {#if !consented}
@@ -149,6 +181,11 @@
  </details>
 {/if}
 <div class="formatted-mail" bind:this={target} hidden={!usable}></div>
-{#if usable||sourceTotal||rendererRejected}
+</div>
+{#if fullPath||usable||sourceTotal||rendererRejected}
  {#if text.trim()}<details class="mail-text-view"><summary>{t('textView')}</summary><pre>{text}</pre></details>{/if}
 {:else}<p class="note">{t('htmlUnavailable')}</p>{#if text.trim()}<pre>{text}</pre>{/if}{/if}
+
+<style>
+ .full-mail-document{display:block;width:100%;height:clamp(320px,65vh,800px);border:1px solid #888;border-radius:4px;background:white;color-scheme:light}
+</style>

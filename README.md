@@ -272,6 +272,16 @@ als bewijs; een scriptbestand of `compose config` is geen PASS.
   als HTTPS-afbeeldingen, zonder referrer of serverproxy en zonder CORS-eis.
   Ook normale HTTPS-redirects zijn mogelijk. De beeldhost ziet het IP-adres
   en kan bezoekers herkennen aan bijvoorbeeld een unieke URL.
+- **Alles laden** is een afzonderlijke toestemming per geopend HTML-bericht.
+  De browser laadt ook HTTPS-stijlbladen, achtergronden en toegestane webfonts
+  rechtstreeks. Het leesdocument is een scriptloze, opaque sandbox via zowel
+  responsebeleid als frame-attribuut; formulieren, actieve links en andere
+  frames worden niet opgenomen. De veilige weergave en platte tekst blijven
+  buiten het frame beschikbaar. Het document is niet cachebaar en geeft zijn
+  app-URL niet als referrer door. Bij vervolgverzoeken vanuit een extern
+  stylesheet kan de browser wél het adres van dat stylesheet meesturen.
+  Het app-beleid regelt niet de cache, cookies of beschikbaarheid van externe
+  bronnen. Na toestemming kunnen externe hosts het openen registreren.
 - De lezer probeert `img src`, daarna `data-src`, daarna één kandidaat uit een
   begrensde, volledig gevalideerde `img srcset`. Als die geen bruikbare URL
   opleveren, kan de eerste directe `img` van een niet-geneste `picture` één

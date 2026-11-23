@@ -64,6 +64,31 @@ async function openNewsletter(name,baseline=false){
  await open(name);
 }
 
+export async function fullStart(lang){
+ await idle();await open('full');assert(reader().querySelector('pre')?.textContent.trim()==='Plain full fixture'&&!button('Alles laden'),'plain default changed');
+ click('Instellingen');await pause(0);const prefs=document.querySelectorAll('main select');
+ set(prefs[0],lang);set(prefs[1],'light');set(prefs[2],'html');await pause(0);click('Instellingen opslaan');await idle();click(lang==='nl'?'Terug':'Back');
+ words=lang==='nl'?{all:'Alles laden',images:'Externe afbeeldingen laden',list:'← Terug naar lijst',safe:'Terug naar veilige weergave'}:{all:'Load all',images:'Load remote images',list:'← Back to list',safe:'Back to safe view'};
+ await open('full');click(words.all);click(words.images);await pause(250);
+ assert(!reader().querySelector('iframe')&&!(await connections())&&!(await requests()).length,'synthetic click contacted remote');
+ return {point:fullPoint('images'),connections:0,requests:0};
+}
+export function fullPoint(mode){const control=button(words[mode]);assert(control,'missing consent control');control.scrollIntoView({block:'center'});const box=control.getBoundingClientRect();return {x:box.x+box.width/2,y:box.y+box.height/2};}
+export async function fullReopen(){click(words.list);await open('full');assert(button(words.images)&&button(words.all)&&!reader().querySelector('iframe'),'reopen retained consent');return fullPoint('all');}
+export async function fullReset(){
+ assert(reader().querySelector('.mail-text-view pre')?.textContent.trim()==='Plain full fixture','text alternative missing');
+ click(words.safe);await pause(0);assert(!reader().querySelector('.full-mail-document'),'safe view did not remove full frame');
+ await fullReopen();if(!document.querySelector('.list').getClientRects().length)click(words.list);
+ await open('work');assert(button(words.all)&&!reader().querySelector('iframe'),'message switch retained consent');
+}
+export async function fullDirectPath(){
+ const json=(path,options)=>fetch(path,options).then(r=>{assert(r.ok,'test API '+r.status);return r.json();});
+ const [{csrf},{messages}]=await Promise.all([json('/api/session'),json('/api/inbox')]);
+ const m=messages.find(row=>row.subject==='Reader full');assert(m,'missing message');
+ const {readerIdentity}=await json(`/api/messages/${m.accountId}/${m.validity}/${m.uid}`);
+ return (await json('/api/reader/document',{method:'POST',headers:{'content-type':'application/json','x-csrf-token':csrf},body:JSON.stringify(readerIdentity)})).path;
+}
+
 export async function headerBefore(theme){
  await openNewsletter('header');
  document.documentElement.dataset.theme=theme;

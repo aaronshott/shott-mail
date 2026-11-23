@@ -10,6 +10,7 @@ import {inboxRoutes} from './inbox.ts';
 import staticPlugin from '@fastify/static';
 import {existsSync} from 'node:fs';
 import {imageStyleHash} from '../image-frame.ts';
+import {documentPath,documentPolicy} from './reader-document.ts';
 
 import type {MailPolicy} from './mail-policy.ts';
 export type Config=MailPolicy & {dbPath:string;key:Buffer;password:string;origin:string;secureCookie:boolean;sessionMs:number;staticRoot:string;dir?:string;loginAttempts?:number;bodyLimit?:number;sqliteBusyMs?:number};
@@ -34,10 +35,13 @@ export async function buildApp(c:Config){
  app.decorateRequest('principal',null);
  const cookieName=c.secureCookie?'__Host-shottmail':'shottmail-local';
  let loginCount=0,windowStart=Date.now(); let hashing=false;
+ const appPolicy=(frameSource:string)=>`default-src 'self'; script-src 'self'; style-src 'self' ${imageStyleHash}; img-src 'self' https:; connect-src 'self'; frame-src ${frameSource}; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`;
  app.addHook('onRequest',async(req,reply)=>{
   reply.header('Cache-Control','no-store').header('X-Content-Type-Options','nosniff').header('Referrer-Policy','no-referrer');
-  // srcdoc inherits img-src and style-src; frame-src still denies URL-based frames.
-  reply.header('Content-Security-Policy',`default-src 'self'; script-src 'self'; style-src 'self' ${imageStyleHash}; img-src 'self' https:; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`);
+  const url=req.routeOptions.url;
+  const view=url===documentPath&&req.method!=='POST';
+  const shell=url==='/'||url==='/index.html';
+  reply.header('Content-Security-Policy',view?documentPolicy:appPolicy(shell?new URL(documentPath,c.origin).href:"'none'"));
   reply.header('X-DNS-Prefetch-Control','off');
   if(!req.routeOptions.url?.startsWith('/api/'))return;
   if(req.method!=='GET'&&req.method!=='HEAD'&&req.headers.origin!==c.origin)return reply.code(403).send({error:'ORIGIN'});
@@ -109,11 +113,11 @@ export async function buildApp(c:Config){
  app.get('/api/config',async()=>({maxDraftChars:c.maxDraftChars??200000,mailMode:c.mailMode??'disabled'}));
  app.get('/api/accounts',async req=>store.listAccounts(req.principal!.userId));
  if(c.mailMode==='public'){
-  const networkRoutes=new Set(['/api/accounts/:id/test','/api/drafts/:id/send','/api/inbox','/api/messages/:account/:validity/:uid',
+  const networkRoutes=new Set([documentPath,'/api/accounts/:id/test','/api/drafts/:id/send','/api/inbox','/api/messages/:account/:validity/:uid',
    '/api/accounts/:account/folders','/api/accounts/:account/folders/:folder/messages','/api/accounts/:account/folders/:folder/messages/:validity/:uid','/api/accounts/:id/sent','/api/drafts/:id/check-sent']);
   const requests=new Map<number,number>();let windowEnd=0,active=0;
   app.addHook('onRoute',route=>{
-   if(!networkRoutes.has(route.url))return;
+   if(!networkRoutes.has(route.url)||(route.url===documentPath&&route.method!=='GET'))return;
    const handler=route.handler;
    route.handler=async function(req,reply){
     const user=req.principal!.userId;
@@ -127,7 +131,11 @@ export async function buildApp(c:Config){
  }
  routes(app,store,c);
  inboxRoutes(app,store,c);
- if(existsSync(c.staticRoot))await app.register(staticPlugin,{root:c.staticRoot,index:['index.html']});
+ if(existsSync(c.staticRoot)){
+  app.get('/',(_,reply)=>reply.sendFile('index.html'));
+  app.get('/index.html',(_,reply)=>reply.sendFile('index.html'));
+  await app.register(staticPlugin,{root:c.staticRoot,index:false});
+ }
  return app;
  }catch(error){await app.close();throw error;}
 }

@@ -93,6 +93,14 @@ try {
     const page = await fetch(origin, {signal: AbortSignal.timeout(4000)});
     assert.equal(page.status, 200);
     assert.equal(await page.text(), readFileSync(join(runtime, 'dist/client/index.html'), 'utf8'));
+    const health = await fetch(origin+'/health');
+    assert.equal(page.headers.get('content-security-policy'),health.headers.get('content-security-policy').replace("frame-src 'none'",`frame-src ${origin}/api/reader/document`));
+    const document = await fetch(origin+'/api/reader/document');
+    assert.equal(document.status,401);
+    assert.equal(document.headers.get('content-security-policy'),"sandbox; default-src 'none'; style-src https: 'unsafe-inline'; img-src https:; font-src https:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'");
+    assert.equal(document.headers.get('cache-control'),'no-store');
+    assert.equal(document.headers.get('referrer-policy'),'no-referrer');
+    console.log('Staged runtime reader: exact route policy and unauthenticated rejection passed.');
   } finally {
     if (!exited) {
       server.kill('SIGTERM');
