@@ -10,6 +10,8 @@ const catalog={
  loadAll:['Alles laden','Load all'],backSafeReader:['Terug naar veilige weergave','Back to safe view'],fullReaderTitle:['Volledige berichtopmaak','Full message layout'],
  fullReaderPrivacy:['Laad ook externe stijlen en lettertypen. De afzender kan je IP-adres zien en registreren dat je het bericht opent.','Also load external styles and fonts. The sender may see your IP address and register that you opened the message.'],
  fullReaderRequested:['Volledige opmaak aangevraagd. Externe onderdelen kunnen ontbreken; de veilige weergave en platte tekst blijven beschikbaar.','Full layout requested. External resources may be missing; the safe view and plain text remain available.'],
+ fullReaderInfo:['Berichtopties','Message options'],
+ fullReaderRead:['Lees bericht','Read message'],
  fullReaderFailed:['De volledige weergave kon niet worden geopend.','The full view could not be opened.'],
  savePreferences:['Instellingen opslaan','Save settings'], preferencesSaved:['Persoonlijke instellingen opgeslagen.','Personal settings saved.'], back:['Terug','Back'],
  loginTitle:['Een rustige plek voor je mail.','A quiet place for your mail.'], loginIntro:['Meld aan met je eigen Shott Mail-account. Nog geen account? Vraag je beheerder.','Sign in with your own Shott Mail account. Need an account? Ask your administrator.'],

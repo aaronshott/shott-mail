@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {runReaderScroll,shortReaderGeometry} from './browser-reader-scroll.mjs';
 const fixturePaths=['/full-background.svg','/full-font.ttf','/full-mail.css','/header-wordmark.png','/sizing-portrait.png'];
 const imagePaths=['/header-wordmark.png','/sizing-portrait.png'];
 const sorted=xs=>xs.map(r=>r.path).sort();
@@ -39,7 +40,13 @@ export async function runFullReader({call,evaluate,poll,run,gesture,imageFrames,
  await gesture(allPoint);
  const frame=await poll(()=>evaluate(`(()=>{const f=document.querySelector('.full-mail-document');return f&&{opaque:f.contentDocument===null,sandbox:f.getAttribute('sandbox'),referrer:f.referrerPolicy,hasSrcdoc:f.hasAttribute('srcdoc'),width:f.clientWidth,overflow:document.documentElement.scrollWidth>innerWidth}})()`));
  assert.deepEqual({...frame,width:0},{opaque:true,sandbox:'',referrer:'no-referrer',hasSrcdoc:false,width:0,overflow:false});
- const rendered=await poll(async()=>{for(const session of imageFrames.values()){const r=await evaluate(childState,false,session).catch(()=>null);if(r)return r;}});
+ const child=async expression=>{
+  for(const session of imageFrames.values()){
+   const r=await evaluate(expression,false,session).catch(()=>null);
+   if(r!==null&&r!==undefined)return r;
+  }
+ };
+ const rendered=await poll(()=>child(childState));
  const checks=r=>{
   assert.equal(r.origin,'null');assert.equal(r.referrer,'');assert.equal(r.active,0);
   assert.equal(r.scrollWidth,r.viewport[0]);assert.deepEqual(r.logo.slice(2),[120,28]);assert.deepEqual(r.portrait.slice(2),[120,240]);
@@ -59,7 +66,8 @@ export async function runFullReader({call,evaluate,poll,run,gesture,imageFrames,
  const iframeOwnAssets=await ownAssets();
  const anonymous={cookie:false,authorization:false,referer:false};
  assert.deepEqual(iframeOwnAssets,[anonymous]);
- await evaluate("document.getElementById('full-reader-privacy').parentElement.scrollIntoView({block:'start'})");
+ if(process.env.FULL_SCROLL_BASELINE==='1')await evaluate("document.getElementById('full-reader-privacy').parentElement.scrollIntoView({block:'start'})");
+ const short=await shortReaderGeometry({evaluate,poll,child,shot});
  await shot('full-loaded',true);
  await run('fullReset');
  assert.equal((await assets()).length,full.length);assert.equal(await connections(),framedConnections);
@@ -75,5 +83,6 @@ export async function runFullReader({call,evaluate,poll,run,gesture,imageFrames,
  assert.deepEqual(directOwnAssets,[anonymous,anonymous]);
  const after=await assets();assert.deepEqual(sorted(after.slice(full.length)),fixturePaths);
  assert.ok(after.every(r=>!r.cookie&&!r.authorization&&(!r.referer||r.stylesheetReferrer)));
- return {passed:true,locale,headers,iframeResponse,directResponse,css,before,imageOnly:images,framed:full.slice(2),framedConnections,frame,rendered,direct,directRequests:after.slice(full.length),iframeOwnAssets,directOwnAssets};
+ const scroll=await runReaderScroll({call,evaluate,poll,child,run,gesture,mobile,shot,locale,assets,connections});
+ return {passed:true,locale,headers,iframeResponse,directResponse,css,before,imageOnly:images,framed:full.slice(2),framedConnections,frame,rendered,direct,directRequests:after.slice(full.length),iframeOwnAssets,directOwnAssets,short,scroll};
 }

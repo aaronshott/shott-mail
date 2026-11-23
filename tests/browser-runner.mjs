@@ -251,7 +251,7 @@ try{
    }
    else record.result=await evaluate(`import('/__test_${kind}.js').then(m=>m.run${kind==='folders'?'Folders':'Composer'}())`,true);
    record.passed=Array.isArray(record.result)?record.result.every(r=>r.passed):record.result?.passed===true;
-  }catch(error){record.error=error.message;record.passed=false;}
+  }catch(error){record.error=error.stack;record.passed=false;}
   finally{ws?.close();if(tab?.id)await fetch(endpoint+'/json/close/'+tab.id);await stop(h);}
  }
  console.log(JSON.stringify({browser:Browser,results},null,2));if(results.some(r=>!r.passed))process.exitCode=1;

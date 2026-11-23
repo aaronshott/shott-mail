@@ -8,7 +8,7 @@ import {once} from 'node:events';
 import {crc32,deflateSync} from 'node:zlib';
 import {newsletter,imageOnly,missingImage,edition,studio,contrastFixtures,diagnostics,pictureFixtures} from './newsletter-fixture.ts';
 import {headerAsset,headerMail,headerReference,headerReferenceCSS} from './header-fixture.ts';
-import {documentMail,fullCSS} from './document-fixture.ts';
+import {documentMail,fullCSS,longDocumentMail} from './document-fixture.ts';
 
 function newsletterPng(){
  const width=640,height=120;
@@ -33,10 +33,12 @@ const imageRequests:{path?:string;cookie:boolean;referer:boolean;authorization:b
 const imageConnections:{count:number}={count:0};
 const imageBytes=reader?newsletterPng():null;
 const fixtureFont=full?readFileSync(process.env.READER_TEST_FONT??'/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf'):null;
+const lateImage=Promise.withResolvers<void>();
 const imageHost=reader?createHttps({key:readFileSync(join(dir,'mail.key')),cert:mail!.ca},(req,res)=>{
  imageRequests.push({path:req.url,cookie:!!req.headers.cookie,referer:!!req.headers.referer,authorization:!!req.headers.authorization,...(full?{stylesheetReferrer:req.headers.referer===imageOrigin+'/full-mail.css'}:{})});
  if(full&&req.url==='/full-mail.css'){res.writeHead(200,{'Content-Type':'text/css','Cache-Control':'no-store'}).end(fullCSS);return;}
  if(full&&req.url==='/full-font.ttf'){res.writeHead(200,{'Content-Type':'font/ttf','Cache-Control':'no-store','Access-Control-Allow-Origin':'*'}).end(fixtureFont);return;}
+ if(full&&req.url==='/late-reader.svg'){void lateImage.promise.then(()=>res.writeHead(200,{'Content-Type':'image/svg+xml','Cache-Control':'no-store'}).end('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="380"><rect width="300" height="380" fill="#285d4d"/></svg>'));return;}
  if(full&&req.url==='/full-background.svg'){res.writeHead(200,{'Content-Type':'image/svg+xml','Cache-Control':'no-store'}).end('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path d="M0 24L24 0" stroke="white" opacity=".13"/></svg>');return;}
  if(req.url==='/redirect.png'){
   res.writeHead(302,{Location:imageOrigin.replace('images.example.test','cdn.example.test')+'/final.png','Cache-Control':'no-store'});res.end();return;
@@ -46,7 +48,7 @@ const imageHost=reader?createHttps({key:readFileSync(join(dir,'mail.key')),cert:
  res.end(headerAsset(req.url??'')??imageBytes);
 }):null;
 let imageOrigin='';
-if(imageHost){imageHost.on('connection',()=>{imageConnections.count++;});const listening=once(imageHost,'listening');imageHost.listen(0,'127.0.0.1');await listening;imageOrigin=`https://images.example.test:${(imageHost.address() as {port:number}).port}`;mail!.seedReader(imageOrigin,full?[documentMail(imageOrigin)]:garden?[newsletter(imageOrigin),imageOnly(imageOrigin),missingImage(imageOrigin),edition(imageOrigin),studio(imageOrigin),...contrastFixtures(),...pictureFixtures(imageOrigin),headerMail(imageOrigin)]:process.argv.includes('--diagnostics')?[diagnostics(imageOrigin),missingImage(imageOrigin)]:[]);}
+if(imageHost){imageHost.on('connection',()=>{imageConnections.count++;});const listening=once(imageHost,'listening');imageHost.listen(0,'127.0.0.1');await listening;imageOrigin=`https://images.example.test:${(imageHost.address() as {port:number}).port}`;mail!.seedReader(imageOrigin,full?[documentMail(imageOrigin),longDocumentMail(imageOrigin)]:garden?[newsletter(imageOrigin),imageOnly(imageOrigin),missingImage(imageOrigin),edition(imageOrigin),studio(imageOrigin),...contrastFixtures(),...pictureFixtures(imageOrigin),headerMail(imageOrigin)]:process.argv.includes('--diagnostics')?[diagnostics(imageOrigin),missingImage(imageOrigin)]:[]);}
 if(replySubjects)mail?.seedReplySubjects();
 if(process.argv.includes('--context'))mail?.seedSent();
 const c={dbPath:join(dir,'app.sqlite'),key:randomBytes(32),password:randomBytes(24).toString('base64url'),origin:'http://127.0.0.1',secureCookie:full,allowedMail:mail?.allowedMail??[],sessionMs:3600000,staticRoot:resolve('dist/client'),...(mail?{mailMode:'fixture' as const,ca:mail.ca,timeoutMs:3000}:{}),...(folders?{pageSize:1}:{})};
@@ -98,6 +100,7 @@ async function run(){
 // Local TLS frontend for testing the normal __Host- cookie on an HTTPS app origin.
 const sameOriginAssets:{cookie:boolean;authorization:boolean;referer:boolean}[]=[];
 if(full){
+ app.post('/__test_release_late_image',async()=>{lateImage.resolve();return {released:true};});
  app.get('/__test_full_same_origin.svg',async(req,reply)=>{
   sameOriginAssets.push({cookie:!!req.headers.cookie,authorization:!!req.headers.authorization,referer:!!req.headers.referer});
   return reply.type('image/svg+xml').send('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>');

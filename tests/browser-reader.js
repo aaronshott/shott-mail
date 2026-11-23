@@ -76,10 +76,16 @@ export async function fullStart(lang){
 export function fullPoint(mode){const control=button(words[mode]);assert(control,'missing consent control');control.scrollIntoView({block:'center'});const box=control.getBoundingClientRect();return {x:box.x+box.width/2,y:box.y+box.height/2};}
 export async function fullReopen(){click(words.list);await open('full');assert(button(words.images)&&button(words.all)&&!reader().querySelector('iframe'),'reopen retained consent');return fullPoint('all');}
 export async function fullReset(){
- assert(reader().querySelector('.mail-text-view pre')?.textContent.trim()==='Plain full fixture','text alternative missing');
+ assert([...reader().querySelectorAll('.mail-text-view pre')].some(e=>e.textContent.trim()==='Plain full fixture'),'text alternative missing');
  click(words.safe);await pause(0);assert(!reader().querySelector('.full-mail-document'),'safe view did not remove full frame');
  await fullReopen();if(!document.querySelector('.list').getClientRects().length)click(words.list);
  await open('work');assert(button(words.all)&&!reader().querySelector('iframe'),'message switch retained consent');
+}
+export async function fullOpenLong(lang){
+ words=lang==='nl'?{all:'Alles laden',list:'← Terug naar lijst',safe:'Terug naar veilige weergave'}:{all:'Load all',list:'← Back to list',safe:'Back to safe view'};
+ await idle();await open('long full');
+ assert(!reader().querySelector('iframe'),'message opened with a live frame');
+ return fullPoint('all');
 }
 export async function fullDirectPath(){
  const json=(path,options)=>fetch(path,options).then(r=>{assert(r.ok,'test API '+r.status);return r.json();});
