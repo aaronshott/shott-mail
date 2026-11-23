@@ -9,6 +9,8 @@
  let target=$state(),status=$state(),available=$state(false),usable=$state(true),consented=$state(false);
  let fullPath=$state(''),pending=$state(false),fullError=$state(false),fullToggle=$state(),active=true;
  let fullDialog=$state(),fullFrame=$state(),backSafe=$state(),showInfo=$state(false);
+ let descriptions=$state([]),descriptionsOpen=$state(false),descriptionsTrigger=$state(),descriptionsDialog=$state(),descriptionsClose=$state();
+ const blockedDescriptions=$derived(descriptions.filter(({loadable})=>!consented||!loadable));
  let unsupportedSources=$state(0),limited=$state(0),inline=$state(0),rendererRejected=$state(0);
  const reasons=imageRejections.filter(reason=>reason!=='cid'&&reason!=='limit');
  const count=reason=>{
@@ -66,6 +68,7 @@
   const template=document.createElement('template');
   template.innerHTML=body?.markup??'';
   let unsupported=0,overBudget=0,embedded=0,rejectedAtRender=0;
+  const alternatives=[];
   function copy(from,to,inheritedPadding=null){
    for(const node of from.childNodes){
     if(node.nodeType===Node.TEXT_NODE){to.append(document.createTextNode(node.data));continue;}
@@ -93,6 +96,9 @@
       label=t('remoteImageBlocked');placeholders.push({slot,url,alt,width,height});
      }else if(!generic)label=t(isInline?'inlineImageUnavailable':'imageLimitReached');
      const name=label?(alt?`${label} — ${alt}`:label):alt;
+     // Keep message order and the exact displayed alternative, independent of
+     // clipping, viewport width, or whether a skipped source can be loaded.
+     if(alt.trim())alternatives.push({name,loadable:!!canLoad});
      slot.title=name;
      if(width&&Number(width)<=32&&(!height||Number(height)<=32)){
       slot.classList.add('mail-image-glyph');
@@ -124,6 +130,7 @@
    }
   }
   copy(template.content,target);
+  descriptions=alternatives;
   available=placeholders.length>0;
   unsupportedSources=unsupported;
   limited=overBudget;
@@ -133,6 +140,21 @@
   const cleanup=protectReaderContrast(target);
   return ()=>{active=false;cleanup();};
  });
+
+ async function showDescriptions(){
+  if(descriptionsOpen||!blockedDescriptions.length)return;
+  descriptionsOpen=true;
+  await tick();
+  if(!active)return;
+  descriptionsDialog.showModal();
+  descriptionsClose.focus();
+ }
+
+ function closeDescriptions(){
+  descriptionsDialog.close();
+  descriptionsOpen=false;
+  descriptionsTrigger?.focus({preventScroll:true});
+ }
 
  async function allowAll(event){
   if(!event.isTrusted||pending||fullPath||!requestDocument)return;
@@ -254,6 +276,22 @@
   </ul>
  </details>
 {/if}
+{#if blockedDescriptions.length}
+ <button class="image-descriptions-trigger" type="button" aria-haspopup="dialog" bind:this={descriptionsTrigger} onclick={showDescriptions}>{t('showImageDescriptions')}</button>
+{/if}
+{#if descriptionsOpen}
+ <dialog class="image-descriptions-dialog" bind:this={descriptionsDialog} aria-labelledby="image-descriptions-title"
+  oncancel={event=>{event.preventDefault();closeDescriptions();}}>
+  <h2 id="image-descriptions-title">{t('blockedImageDescriptions')}</h2>
+  <button type="button" bind:this={descriptionsClose} onclick={closeDescriptions}>{t('closeImageDescriptions')}</button>
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex (the description list needs keyboard scrolling) -->
+  <div tabindex="0" role="region" aria-label={t('imageDescriptionList')}>
+   <ol>
+    {#each blockedDescriptions as {name}}<li><bdi>{name}</bdi></li>{/each}
+   </ol>
+  </div>
+ </dialog>
+{/if}
 <div class="formatted-mail" bind:this={target} hidden={!usable}></div>
 </div>
 {#if usable||sourceTotal||rendererRejected}
@@ -261,6 +299,16 @@
 {:else}<p class="note">{t('htmlUnavailable')}</p>{#if text.trim()}<pre>{text}</pre>{/if}{/if}
 
 <style>
+ .image-descriptions-trigger{margin-block:.5rem;min-block-size:44px;max-inline-size:100%;overflow-wrap:anywhere}
+ .image-descriptions-dialog[open]{display:grid;grid-template-rows:auto auto minmax(0,1fr);gap:.5rem;
+  box-sizing:border-box;inline-size:min(38rem,calc(100% - 1rem));max-inline-size:100%;max-block-size:calc(100dvh - 1rem);
+  padding:.75rem;border:1px solid var(--line);border-radius:.4em;background:var(--surface);color:var(--ink);overflow-wrap:anywhere}
+ .image-descriptions-dialog h2{margin:0;font-size:1.125rem}
+ .image-descriptions-dialog button{justify-self:start;min-block-size:44px}
+ .image-descriptions-dialog [role=region]{min-block-size:0;overflow:auto;overscroll-behavior:contain}
+ .image-descriptions-dialog [role=region]:focus-visible{outline-offset:-2px}
+ .image-descriptions-dialog ol{margin:0;padding:.25rem .5rem .25rem 2rem;padding-inline:2rem .5rem}
+ .image-descriptions-dialog li+li{margin-block-start:.5rem}
  /* The shell is inert in the modal; clipping its layout also removes the
     root scroll range. The document needs neither a height read nor a bridge. */
  :global(#app:has(.full-reader-dialog[open])){block-size:100dvh;overflow:clip}

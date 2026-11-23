@@ -20,13 +20,13 @@ export const unhintedMail=(origin:string)=>{
  const band='style="background-color:#18263a;color:#f5f9ff;font-size:14px;line-height:20px"';
  const bandTitle='<td style="padding:8px"><strong>Observatory Brief</strong></td>';
  const header=(cell:string,attrs=band,cols='',role='role="presentation"')=>`<table ${role} width="100%" ${attrs}>${cols}<tr>${cell}${bandTitle}</tr></table>`;
- const img=(name:string,hints='')=>`<img ${hints} src="${origin}/${name.toLowerCase().replaceAll(' ','-')}.png" alt="${unhintedAlt} ${name}">`;
+ const img=(name:string,hints='',extra='')=>`<img ${hints} src="${origin}/${name.toLowerCase().replaceAll(' ','-')}.png" alt="${unhintedAlt}${extra} ${name}">`;
  return preconsentMail(origin).replace('Reader preconsent','Reader unhinted').replace(preconsentMarkup(origin),`
  <link rel="stylesheet" href="${origin}/sheet.css">
  <style>@import url('${origin}/import.css'); .sheet {background:#18263a url('${origin}/back.png');color:#f5f9ff}
  .skinny {width:12px}.hidden{display:none;background:url('${origin}/hidden.png')}</style>
  ${header(`<td width="24">${img('Parent attribute')}</td>`)}
- ${header(`<td style="width:9px;padding:0"><span><span>${img('Parent inline CSS')}</span></span></td>`,band,'','border="0"')}
+ ${header(`<td style="width:9px;padding:0"><span><span>${img('Parent inline CSS','',' &lt;b&gt;blue &amp; gold&lt;/b&gt;')}</span></span></td>`,band,'','border="0"')}
  ${header(`<td>${img('Height only','height="40"')}</td>`,band,'<colgroup><col width="34"><col></colgroup>')}
  ${header(`<td width="52"><span>${img('Width only','width="112"')}</span></td>`)}
  ${header(`<td width="8%">${img('Large hints','width="640" height="480"')}</td>`)}

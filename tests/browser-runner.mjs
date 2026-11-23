@@ -7,9 +7,10 @@ import {join,resolve} from 'node:path';
 import {runTreeStyle} from './browser-tree-style.mjs';
 import {runHeader} from './browser-header.mjs';
 import {runFullReader} from './browser-full-reader.mjs';
+import {runImageDescriptions} from './browser-image-descriptions.mjs';
 import {editionImages,picturePaths} from './newsletter-fixture.ts';
 const chrome=process.argv[2];if(!chrome)throw Error('Pass an absolute Chrome/Chromium path');
-const workflows=process.argv.length>3?process.argv.slice(3):['folders','context','composer','b1','users','settings','reply-nl','reply-en','reader-nl','reader-en','diagnostics-nl','diagnostics-en','newsletter','edition','studio','picture','contrast','header-light','header-dark','tree-light','tree-dark','full-reader','preconsent-light','preconsent-dark','unhinted-light','unhinted-dark'];
+const workflows=process.argv.length>3?process.argv.slice(3):['folders','context','composer','b1','users','settings','reply-nl','reply-en','reader-nl','reader-en','diagnostics-nl','diagnostics-en','newsletter','edition','studio','picture','contrast','header-light','header-dark','tree-light','tree-dark','full-reader','preconsent-light','preconsent-dark','unhinted-light','unhinted-dark','image-descriptions-en','image-descriptions-nl'];
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 await mkdir('.test-data',{recursive:true,mode:0o700});
 const profile=await mkdtemp(resolve('.test-data/browser-chrome-'));
@@ -28,7 +29,8 @@ try{
   const diagnosticsLocale=kind==='diagnostics-nl'?'nl':kind==='diagnostics-en'?'en':null;
   const header=kind==='header-light'?'light':kind==='header-dark'?'dark':null;
   const unhinted=kind.startsWith('unhinted-');
-  const preconsent=unhinted?kind.slice(9):kind.startsWith('preconsent-')?kind.slice(11):null;
+  const descriptions=kind.startsWith('image-descriptions-')?kind.slice(-2):null;
+  const preconsent=descriptions?(descriptions==='nl'?'dark':'light'):unhinted?kind.slice(9):kind.startsWith('preconsent-')?kind.slice(11):null;
   const full=kind==='full-reader',studio=kind==='studio',edition=kind==='edition',picture=kind==='picture',garden=kind==='newsletter'||kind==='contrast'||edition||studio||picture||header||preconsent,needsImage=readerLocale||garden||diagnosticsLocale||full;
   const treeTheme=kind==='tree-light'?'light':kind==='tree-dark'?'dark':null;
   const h=start(process.execPath,['tests/browser-harness.ts',...(full?['--full-reader']:garden?['--newsletter']:diagnosticsLocale?['--reader','--diagnostics']:readerLocale?['--reader']:replyLocale?['--reply-subjects']:kind==='context'?['--folders','--context']:treeTheme?['--folders','--tree-style']:kind==='settings'?['--folders']:['folders','composer'].includes(kind)?[`--${kind}`]:[])]);
@@ -36,7 +38,7 @@ try{
   try{
    await poll(()=>origin);tab=await (await fetch(endpoint+'/json/new?about:blank',{method:'PUT'})).json();
    ws=new WebSocket(tab.webSocketDebuggerUrl);await new Promise((r,j)=>{ws.onopen=r;ws.onerror=j;});
-   let seq=0;const pending=new Map(),observed=[],imageFrames=new Map(),responses=[],external=[];
+   let seq=0;const pending=new Map(),observed=[],imageFrames=new Map(),responses=[],external=[],traffic=[];
    const call=(method,params={},sessionId)=>new Promise((r,j)=>{
     const id=++seq,timer=setTimeout(()=>{pending.delete(id);j(Error(method+' timeout'));},45000);
     pending.set(id,(value,error)=>{pending.delete(id);clearTimeout(timer);error?j(Error(error.message)):r(value);});ws.send(JSON.stringify({id,method,params,sessionId}));
@@ -57,6 +59,7 @@ try{
     }
     if(method==='Network.requestWillBeSent'){
      const url=new URL(params.request.url);
+     if(descriptions&&['https:','http:'].includes(url.protocol))traffic.push(url.href);
      if(preconsent&&['https:','http:'].includes(url.protocol)&&url.origin!==origin)external.push(url.href);
      if([imageOrigin,imageOrigin.replace('images.','cdn.')].includes(url.origin))observed.push(url.pathname);
     }
@@ -98,7 +101,10 @@ try{
      if(mobile){await call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point]});await call('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});}
      else for(const type of ['mousePressed','mouseReleased'])await call('Input.dispatchMouseEvent',{type,...point,button:'left',clickCount:1});
     };
-    if(unhinted){
+    if(descriptions){
+     record.before=await run('unhintedCrop',[preconsent,descriptions].map(x=>JSON.stringify(x)).join(','));
+     record.result=await runImageDescriptions({call,evaluate,poll,run,gesture,imageFrames,external,traffic,mobile,shot,locale:descriptions,before:record.before});
+    }else if(unhinted){
      const g=record.before=await run('unhintedCrop',JSON.stringify(preconsent));
      await shot(kind,true);
      const {nodes}=await call('Accessibility.getFullAXTree');

@@ -54,13 +54,13 @@ export async function afterConsent(){
  }
 }
 
-async function openNewsletter(name,baseline=false){
+async function openNewsletter(name,baseline=false,lang='en'){
  await idle();await open('garden');
  assert(!reader().querySelector('.image-controls,.formatted-mail'),'plain default changed');
  if(!baseline)assert(reader().textContent.includes('tekstmodus'),'missing plain-mode explanation');
  click('Instellingen');await pause(0);
  const prefs=document.querySelectorAll('main select');
- set(prefs[0],'en');set(prefs[1],'light');set(prefs[2],'html');await pause(0);click('Instellingen opslaan');await idle();click('Back');
+ set(prefs[0],lang);set(prefs[1],'light');set(prefs[2],'html');await pause(0);click('Instellingen opslaan');await idle();click(lang==='nl'?'Terug':'Back');
  await open(name);
 }
 
@@ -135,11 +135,11 @@ export async function preconsentCrop(theme){
   overflow:body.scrollWidth>body.clientWidth||document.documentElement.scrollWidth>innerWidth,requests:await requests(),connections:await connections()};
 }
 
-export async function unhintedCrop(theme){
- await openNewsletter('unhinted');
+export async function unhintedCrop(theme,lang='en'){
+ await openNewsletter('unhinted',false,lang);
  document.documentElement.dataset.theme=theme;
  const body=reader().querySelector('.formatted-mail');
- assert(button('Load remote images')&&button('Load all')&&!reader().querySelector('dialog,iframe'),'consent boundary changed');
+ assert(button(lang==='nl'?'Externe afbeeldingen laden':'Load remote images')&&button(lang==='nl'?'Alles laden':'Load all')&&!reader().querySelector('dialog[open],iframe'),'consent boundary changed');
  assert(!body.querySelector('img,link,style,script,[src],[srcset],[href],[background]')&&
   [...body.querySelectorAll('[style]')].every(el=>!el.style.cssText.includes('url(')),'active resource in Safe HTML');
  body.scrollIntoView({block:'start'});await pause(300);
@@ -165,6 +165,17 @@ export async function unhintedCrop(theme){
   standalone:[...body.querySelectorAll('p .mail-image-placeholder,tr:has(>td:only-child) .mail-image-placeholder')].map(e=>[e.textContent,e.checkVisibility(),getComputedStyle(e).position]),
   reasons:[...reader().querySelectorAll('.image-source-summary li')].map(e=>e.textContent),
   overflow:body.scrollWidth>body.clientWidth||document.documentElement.scrollWidth>innerWidth,requests:await requests(),connections:await connections()};
+}
+
+export async function descriptionReset(lang){
+ const back=lang==='nl'?'← Terug naar lijst':'← Back to list';
+ assert(!reader().querySelector('dialog[open],iframe'),'reader not back in safe view');
+ if(!document.querySelector('.list').getClientRects().length)click(back);
+ await open('garden');
+ assert(!reader().querySelector('dialog[open],iframe,.mail-image-in-row'),'previous message details still active');
+ click(back);await open('unhinted');
+ assert(!reader().querySelector('dialog[open],iframe'),'reopening retained modal or consent');
+ return {connections:await connections(),requests:await requests()};
 }
 
 export async function headerAfter(){
