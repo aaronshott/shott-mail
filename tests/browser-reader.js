@@ -107,6 +107,34 @@ export async function headerBefore(theme){
  control.scrollIntoView({block:'center'});const box=control.getBoundingClientRect();
  return {connections:0,requests:0,point:{x:box.x+box.width/2,y:box.y+box.height/2}};
 }
+export async function preconsentCrop(theme){
+ await openNewsletter('preconsent');
+ document.documentElement.dataset.theme=theme;
+ const body=reader().querySelector('.formatted-mail');
+ const table=body.querySelector('table'),band=table.querySelector('table');
+ const icon=band.querySelector('.mail-image-placeholder'),title=band.querySelector('strong');
+ const data=table.querySelector('table:has(caption)');
+ assert(button('Load remote images')&&button('Load all')&&!reader().querySelector('dialog,iframe'),'consent boundary changed');
+ assert(!body.querySelector('a,img,link,style,script,[src],[srcset],[href],[background]')&&
+   [...body.querySelectorAll('[style]')].every(el=>!el.style.cssText.includes('url(')),'active resource in Safe HTML');
+ body.scrollIntoView({block:'start'});await pause(300);
+ const box=el=>el.getBoundingClientRect();
+ const range=document.createRange();range.selectNodeContents(title);
+ const first=range.getBoundingClientRect(),last=box(data.tBodies[0].rows[0]);
+ const fg=getComputedStyle(title).color;
+ const bg=[band,table].map(el=>getComputedStyle(el).backgroundColor).find(c=>c.startsWith('rgb('));
+ const lum=c=>c.match(/\d+/g).reduce((v,x,i)=>{const n=x/255;return v+[.2126,.7152,.0722][i]*(n<=.04045?n/12.92:((n+.055)/1.055)**2.4);},0);
+ const [a,b]=[lum(fg),lum(bg)];
+ return {theme,width:body.clientWidth,band:box(band).height,icon:[box(icon).width,box(icon).height],fg,bg,
+  ratio:(Math.max(a,b)+.05)/(Math.min(a,b)+.05),columnWidths:[...data.tHead.rows[0].cells].map(c=>box(c).width),
+  aligns:[...data.tBodies[0].rows[0].cells].map(c=>getComputedStyle(c).textAlign),
+  rowsAligned:[...data.tBodies[0].rows].every(r=>[...r.cells].every((c,i)=>box(c).x===box(data.tHead.rows[0].cells[i]).x)),
+  firstRowOffset:last.top-box(band).top,titleInCrop:first.top>=0&&first.bottom<=innerHeight,rowInCrop:last.top>=0&&last.bottom<=innerHeight,
+  layoutBorders:[table,band].map(t=>getComputedStyle(t.rows[0].cells[0]).borderTopWidth),dataBorder:getComputedStyle(data.tBodies[0].rows[0].cells[0]).borderTopWidth,
+  scope:[data.tHead.rows[0].cells[0].scope,data.tBodies[0].rows[0].cells[0].scope],role:data.getAttribute('role'),
+  overflow:body.scrollWidth>body.clientWidth||document.documentElement.scrollWidth>innerWidth,requests:await requests(),connections:await connections()};
+}
+
 export async function headerAfter(){
  const body=reader().querySelector('.formatted-mail');
  const frames=[...body.querySelectorAll('iframe')];

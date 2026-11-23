@@ -11,6 +11,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {setTimeout as delay} from 'node:timers/promises';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {pictureFixtures,picturePaths} from './newsletter-fixture.ts';
+import {preconsentMail} from './preconsent-fixture.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const lines = readFileSync(join(root, 'Dockerfile'), 'utf8').split(/\r?\n/);
@@ -47,6 +48,13 @@ try {
   assert.deepEqual(empty.formatted?.images, []);
   assert.deepEqual(empty.formatted?.imageRejections, {missing:23});
   console.log('Staged runtime MIME: 23 selected picture URLs, 23 genuine missing sources.');
+  const {formatted} = await parseMessage(Buffer.from(preconsentMail(imageOrigin)));
+  assert.deepEqual(formatted.images, [imageOrigin+'/fixture-mark.png']);
+  assert.match(formatted.markup, /data-p-background-color="#18263a"/);
+  assert.match(formatted.markup, /<col data-p-width="48%"/);
+  assert.match(formatted.markup, /<th scope="row">North array/);
+  assert.doesNotMatch(formatted.markup, /https?:|url\(|<style|<link|\b(?:href|src|style)=/);
+  console.log('Staged runtime MIME: preconsent colors, columns and row scope retained; only the consent image candidate retained.');
 
   const dbPath = join(runtime, 'data', 'app.sqlite');
   const key = randomBytes(32);

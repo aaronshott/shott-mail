@@ -9,7 +9,7 @@ import {runHeader} from './browser-header.mjs';
 import {runFullReader} from './browser-full-reader.mjs';
 import {editionImages,picturePaths} from './newsletter-fixture.ts';
 const chrome=process.argv[2];if(!chrome)throw Error('Pass an absolute Chrome/Chromium path');
-const workflows=process.argv.length>3?process.argv.slice(3):['folders','context','composer','b1','users','settings','reply-nl','reply-en','reader-nl','reader-en','diagnostics-nl','diagnostics-en','newsletter','edition','studio','picture','contrast','header-light','header-dark','tree-light','tree-dark','full-reader'];
+const workflows=process.argv.length>3?process.argv.slice(3):['folders','context','composer','b1','users','settings','reply-nl','reply-en','reader-nl','reader-en','diagnostics-nl','diagnostics-en','newsletter','edition','studio','picture','contrast','header-light','header-dark','tree-light','tree-dark','full-reader','preconsent-light','preconsent-dark'];
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 await mkdir('.test-data',{recursive:true,mode:0o700});
 const profile=await mkdtemp(resolve('.test-data/browser-chrome-'));
@@ -27,14 +27,15 @@ try{
   const readerLocale=kind==='reader-nl'?'nl':kind==='reader-en'?'en':null;
   const diagnosticsLocale=kind==='diagnostics-nl'?'nl':kind==='diagnostics-en'?'en':null;
   const header=kind==='header-light'?'light':kind==='header-dark'?'dark':null;
-  const full=kind==='full-reader',studio=kind==='studio',edition=kind==='edition',picture=kind==='picture',garden=kind==='newsletter'||kind==='contrast'||edition||studio||picture||header,needsImage=readerLocale||garden||diagnosticsLocale||full;
+  const preconsent=kind.startsWith('preconsent-')?kind.slice(11):null;
+  const full=kind==='full-reader',studio=kind==='studio',edition=kind==='edition',picture=kind==='picture',garden=kind==='newsletter'||kind==='contrast'||edition||studio||picture||header||preconsent,needsImage=readerLocale||garden||diagnosticsLocale||full;
   const treeTheme=kind==='tree-light'?'light':kind==='tree-dark'?'dark':null;
   const h=start(process.execPath,['tests/browser-harness.ts',...(full?['--full-reader']:garden?['--newsletter']:diagnosticsLocale?['--reader','--diagnostics']:readerLocale?['--reader']:replyLocale?['--reply-subjects']:kind==='context'?['--folders','--context']:treeTheme?['--folders','--tree-style']:kind==='settings'?['--folders']:['folders','composer'].includes(kind)?[`--${kind}`]:[])]);
   let origin,imageOrigin,tab,ws,harnessOutput='';h.stdout.on('data',chunk=>{harnessOutput+=chunk;const match=/BROWSER_HARNESS (https?:\/\/127\.0\.0\.1:\d+)(?: (https:\/\/images\.example\.test:\d+))?\r?\n/.exec(harnessOutput);if(match)[,origin,imageOrigin]=match;});
   try{
    await poll(()=>origin);tab=await (await fetch(endpoint+'/json/new?about:blank',{method:'PUT'})).json();
    ws=new WebSocket(tab.webSocketDebuggerUrl);await new Promise((r,j)=>{ws.onopen=r;ws.onerror=j;});
-   let seq=0;const pending=new Map(),observed=[],imageFrames=new Map(),responses=[];
+   let seq=0;const pending=new Map(),observed=[],imageFrames=new Map(),responses=[],external=[];
    const call=(method,params={},sessionId)=>new Promise((r,j)=>{
     const id=++seq,timer=setTimeout(()=>{pending.delete(id);j(Error(method+' timeout'));},45000);
     pending.set(id,(value,error)=>{pending.delete(id);clearTimeout(timer);error?j(Error(error.message)):r(value);});ws.send(JSON.stringify({id,method,params,sessionId}));
@@ -53,9 +54,13 @@ try{
      const {url,status,headers}=params.response,{origin,pathname:path}=new URL(url);
      if(path==='/api/reader/document'||path==='/full-mail.css')responses.push({origin,path,status,headers:Object.fromEntries(Object.entries(headers).map(([k,v])=>[k.toLowerCase(),v]))});
     }
-    if(method==='Network.requestWillBeSent'&&[imageOrigin,imageOrigin.replace('images.','cdn.')].includes(new URL(params.request.url).origin))observed.push(new URL(params.request.url).pathname);
+    if(method==='Network.requestWillBeSent'){
+     const url=new URL(params.request.url);
+     if(preconsent&&['https:','http:'].includes(url.protocol)&&url.origin!==origin)external.push(url.href);
+     if([imageOrigin,imageOrigin.replace('images.','cdn.')].includes(url.origin))observed.push(url.pathname);
+    }
    };
-   await call('Emulation.setDeviceMetricsOverride',{width:mobile?(replyLocale||readerLocale?320:390):(header||full?1600:1280),height:mobile?844:900,deviceScaleFactor:mobile&&!header&&!full?3:1,mobile});
+   await call('Emulation.setDeviceMetricsOverride',{width:mobile?(replyLocale||readerLocale?320:390):(header||full||preconsent?1600:1280),height:mobile?844:900,deviceScaleFactor:mobile&&!header&&!full&&!preconsent?3:1,mobile});
    await call('Emulation.setTouchEmulationEnabled',{enabled:mobile});
    if(treeTheme||kind==='settings')await call('Emulation.setEmulatedMedia',{features:[{name:'prefers-color-scheme',value:treeTheme??'dark'}]});
    if(needsImage){
@@ -92,7 +97,20 @@ try{
      if(mobile){await call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point]});await call('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});}
      else for(const type of ['mousePressed','mouseReleased'])await call('Input.dispatchMouseEvent',{type,...point,button:'left',clickCount:1});
     };
-    if(full){
+    if(preconsent){
+     const g=record.before=await run('preconsentCrop',JSON.stringify(preconsent));
+     await shot(kind,true);
+     const {nodes}=await call('Accessibility.getFullAXTree');
+     record.accessibleIcon=nodes.find(n=>n.role?.value==='image'&&n.name?.value?.includes('Field bulletin symbol'))?.name.value??null;
+     record.externalRequests=external;
+     if(external.length||g.connections||g.requests.length||imageFrames.size)throw Error('External resource activity before consent');
+     if(g.band<54||g.band>72||g.icon.some(n=>n<12||n>22)||g.bg!=='rgb(24, 38, 58)'||g.fg!=='rgb(245, 249, 255)'||g.ratio<4.5||
+      g.firstRowOffset>135||!g.titleInCrop||!g.rowInCrop||g.layoutBorders.join()!=='0px,0px'||g.dataBorder!=='1px'||
+      g.scope.join()!=='col,row'||g.role||g.aligns.join()!=='start,right,right'||!g.rowsAligned||g.overflow||
+      g.columnWidths.some((w,i)=>Math.abs(w/g.width-[.48,.29,.23][i])>.02)||
+      record.accessibleIcon!=='Remote image blocked — Field bulletin symbol')throw Error('Preconsent first crop fidelity mismatch');
+     record.result={passed:true};
+    }else if(full){
      record.result=await runFullReader({call,evaluate,poll,run,gesture,imageFrames,observed,origin,mobile,shot,responses});
     }else if(header){
      record.result=await runHeader({call,evaluate,poll,run,gesture,imageFrames,observed,origin,mobile,record,theme:header,dir:process.env.HEADER_SCREENSHOTS});

@@ -116,6 +116,17 @@ test('presentation normalizes only closed grammar values and discards unsupporte
  assert.deepEqual(body.images,[]);
 });
 
+test('table hints accept bounded columns, native scopes and literal borders, never resource-bearing CSS',()=>{
+ const body=formatBody(`<table border="0" data-p-color="red" style="color:#abc ! important;background:url(https://images.example.test/a.png) !important">
+ <colgroup><col width="40%" span="2" style="background-color:red"><col width="1201" span="13"></colgroup>
+ <tr><th scope="ROWGROUP" style="border:2px solid rgb(24, 38, 58)">A</th><th scope="bad" style="border:2px solid var(--url)">B</th></tr></table>`)!;
+ assert.match(body.markup,/<table data-layout="borderless-candidate" data-p-color="#abc">/);
+ assert.match(body.markup,/<colgroup><col data-p-width="40%" span="2"[^>]*><col\s*\/?>/);
+ assert.match(body.markup,/<th data-p-border="2px solid #18263a" scope="rowgroup">A<\/th><th>B<\/th>/);
+ assert.doesNotMatch(body.markup,/https?:|url\(|var\(|red|important|background/);
+ assert.deepEqual(body.images,[]);
+});
+
 test('wrapped quoted-printable MIME recovers 23 picture slots but not 23 truly empty slots',async()=>{
  const origin='https://images.example.test:4443';
  const [picture,empty]=await Promise.all(pictureFixtures(origin).map(raw=>parseMessage(Buffer.from(raw))));

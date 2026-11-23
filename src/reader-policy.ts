@@ -1,5 +1,10 @@
 // The reader only instantiates these inert tags and reconstructs bounded layout hints.
 export const formattingTags = new Set(['p','br','hr','b','strong','em','i','u','s','ul','ol','li','blockquote','pre','code','h1','h2','h3','h4','h5','h6','table','caption','thead','tbody','tfoot','tr','td','th','div','span','del','sub','sup']);
+export const safeFormattingTags = new Set([...formattingTags,'colgroup','col']);
+export const tableHeaderScope=(value:string|null|undefined)=>{
+ const scope=value?.trim().toLowerCase();
+ return scope&&['row','col','rowgroup','colgroup'].includes(scope)?scope:null;
+};
 
 // Bound both distinct destinations and instantiated frame slots.
 export const maxReaderImages=48;

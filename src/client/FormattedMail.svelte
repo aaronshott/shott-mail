@@ -1,6 +1,6 @@
 <script>
  import {onMount,tick} from 'svelte';
- import {boundedInteger,formattingTags,imageRejections,imageURL,maxReaderImages,tableWidth} from '../reader-policy.ts';
+ import {boundedInteger,safeFormattingTags,imageRejections,imageURL,maxReaderImages,tableHeaderScope,tableWidth} from '../reader-policy.ts';
  import {applyPresentation,cellPadding} from '../reader-presentation.ts';
  import {imageFrameDocument} from '../image-frame.ts';
  import {protectReaderContrast} from './reader-contrast.ts';
@@ -17,6 +17,30 @@
  };
  const sourceTotal=$derived(body?.imageRejections?reasons.reduce((sum,reason)=>sum+count(reason),0):unsupportedSources);
  const placeholders=[];
+ const hasText=el=>[...el.childNodes].some(n=>n.nodeType===Node.TEXT_NODE&&n.textContent.trim());
+ const onlyChild=(el,test)=>!hasText(el)&&el.children.length===1&&test(el.firstElementChild);
+ function onlyCompactImage(el){
+  while(el.localName==='td'||el.localName==='span'){
+   if(!hasText(el)&&el.children.length===1)el=el.firstElementChild;
+   else return false;
+   if(el.classList.contains('mail-image-glyph'))return true;
+  }
+  return false;
+ }
+ function styleTable(table,layout){
+  const rows=[...table.rows];
+  const simple=rows.length&&!table.caption&&!table.tHead&&!table.tFoot&&rows.every(row=>
+   row.cells.length&&[...row.cells].every(c=>c.localName==='td'&&c.colSpan===1&&c.rowSpan===1));
+  const cells=rows.length===1?[...rows[0].cells]:[];
+  const leadingIcon=simple&&cells.length>=2&&onlyCompactImage(cells[0])&&
+   cells.slice(1).some(c=>c.textContent.trim()&&!c.querySelector('table,.mail-image-placeholder'));
+  // border=0 alone is not evidence of layout. Only style structural wrappers
+  // and icon/label rows; do not change the accessibility role of inferred tables.
+  if(layout==='borderless-candidate'&&simple&&(leadingIcon||rows.every(row=>
+   row.cells.length===1&&onlyChild(row.cells[0],el=>el.localName==='table'))))table.classList.add('mail-layout-table');
+  if(layout==='presentation'&&!leadingIcon&&cells.length>=2&&cells.length<=3&&
+   cells.every(c=>c.localName==='td'&&c.colSpan===1&&c.rowSpan===1))table.classList.add('mail-stack-columns');
+ }
 
  onMount(()=>{
   // Parse in a detached, inert template. Rebuild; never insert its nodes or copy attributes wholesale.
@@ -42,15 +66,19 @@
       if(index!==null)rejectedAtRender++;else unsupported++;
       if(!alt.trim())continue;
      }
+     const width=boundedInteger(node.getAttribute('data-image-width'),1200);
+     const height=boundedInteger(node.getAttribute('data-image-height'),800);
      const slot=document.createElement('span');slot.className='mail-image-placeholder';to.append(slot);
      let label;
      if(canLoad){
-      const width=boundedInteger(node.getAttribute('data-image-width'),1200);
-      const height=boundedInteger(node.getAttribute('data-image-height'),800);
       label=t('remoteImageBlocked');placeholders.push({slot,url,alt,width,height});
      }else if(!generic)label=t(isInline?'inlineImageUnavailable':'imageLimitReached');
-     slot.textContent=label?(alt?`${label} — ${alt}`:label):alt;
-    }else if(formattingTags.has(tag)){
+     const name=label?(alt?`${label} — ${alt}`:label):alt;
+     if(width&&Number(width)<=32&&(!height||Number(height)<=32)){
+      slot.classList.add('mail-image-glyph');
+      slot.setAttribute('role','img');slot.setAttribute('aria-label',name);slot.title=name;
+     }else slot.textContent=name;
+    }else if(safeFormattingTags.has(tag)){
      const el=document.createElement(tag);
      let padding=inheritedPadding;
      if(tag==='table'){
@@ -64,13 +92,13 @@
       for(const key of ['colspan','rowspan']){
        const span=boundedInteger(node.getAttribute(key),12);if(span)el.setAttribute(key,span);
       }
+      const scope=tag==='th'&&tableHeaderScope(node.getAttribute('scope'));if(scope)el.setAttribute('scope',scope);
+     }else if(tag==='col'||tag==='colgroup'){
+      const span=boundedInteger(node.getAttribute('span'),12);if(span)el.setAttribute('span',span);
      }
      applyPresentation(node,el);
      copy(node,el,padding);
-     if(tag==='table'&&el.getAttribute('role')==='presentation'&&el.rows.length===1){
-      const row=el.rows[0],cells=[...row.cells];
-      if(cells.length>=2&&cells.length<=3&&cells.every(c=>c.localName==='td'&&c.colSpan===1&&c.rowSpan===1))el.classList.add('mail-stack-columns');
-     }
+     if(tag==='table')styleTable(el,node.getAttribute('data-layout'));
      to.append(el);
     }
    }
@@ -81,7 +109,7 @@
   limited=overBudget;
   inline=embedded;
   rendererRejected=rejectedAtRender;
-  usable=!!target.textContent.trim();
+  usable=!!target.textContent.trim()||!!target.querySelector('.mail-image-glyph');
   const cleanup=protectReaderContrast(target);
   return ()=>{active=false;cleanup();};
  });
@@ -135,6 +163,7 @@
    frame.title=alt||t('remoteImage');
    // The sandbox is opaque: use native image alt fallback rather than treating frame load as image success.
    frame.srcdoc=imageFrameDocument(url,alt||t('remoteImageUnavailable'));
+   for(const attr of ['role','aria-label','title'])slot.removeAttribute(attr);
    slot.className='mail-image-frame';slot.replaceChildren(frame);
    if(width){
     if(height)slot.style.maxWidth=`min(100%, ${width}px)`;

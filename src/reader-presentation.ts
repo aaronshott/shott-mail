@@ -29,6 +29,7 @@ function family(v:string){
  return null;
 }
 const isBlock=(tag:string)=>/^(div|p|table|td|th|h[1-6]|blockquote|ul|ol|pre|hr)$/.test(tag);
+const isColumn=(tag:string)=>tag==='col'||tag==='colgroup';
 const fields={
  color:(v:string)=>color(v),
  'background-color':(v:string)=>color(v),
@@ -41,7 +42,7 @@ const fields={
  'text-decoration':(v:string)=>oneOf(v,'none underline line-through'),
  'text-align':(v:string)=>oneOf(v,'left center right start end'),
  'vertical-align':(v:string,tag:string)=>/^(td|th)$/.test(tag)?oneOf(v,'top middle bottom'):null,
- width:(v:string,tag:string)=>isBlock(tag)?width(v):null,
+ width:(v:string,tag:string)=>isBlock(tag)||isColumn(tag)?width(v):null,
  'max-width':(v:string,tag:string)=>isBlock(tag)?width(v):null,
  padding:(v:string)=>box(v,32),
  'padding-top':(v:string)=>px(v,0,32),
@@ -52,12 +53,19 @@ const fields={
  'margin-top':(v:string,tag:string)=>isBlock(tag)?px(v,0,32):null,
  'margin-bottom':(v:string,tag:string)=>isBlock(tag)?px(v,0,32):null,
  'border-radius':(v:string)=>px(v,0,24),
+ border:(v:string,tag:string)=>{
+  if(tag!=='td'&&tag!=='th'&&tag!=='table')return null;
+  if(v==='none'||v==='0')return 'none';
+  const match=/^([0-4]px) (solid|dashed|dotted) (.+)$/.exec(v);
+  const paint=match&&color(match[3]);
+  return paint?`${match[1]} ${match[2]} ${paint}`:null;
+ },
  display:(v:string,tag:string)=>tag==='span'&&v==='inline-block'?v:null,
 } satisfies Record<string,(v:string,tag:string)=>string|null>;
 type Field=keyof typeof fields;
 export const presentationAttributes=Object.keys(fields).map(key=>`data-p-${key}`);
 function normalize(key:string,value:string,tag:string){
- if(!Object.hasOwn(fields,key)||value.length>160)return null;
+ if(!Object.hasOwn(fields,key)||value.length>160||(isColumn(tag)&&key!=='width'))return null;
  return fields[key as Field](value.trim().toLowerCase(),tag);
 }
 
@@ -77,7 +85,9 @@ export function presentationHints(tag:string,attrs:Record<string,string>){
    const colon=declaration.indexOf(':');if(colon<1)continue;
    let key=declaration.slice(0,colon).trim().toLowerCase();
    if(key==='background')key='background-color'; // only solid colors, never shorthand layers
-   set(key,declaration.slice(colon+1));
+   // Accept the value of a literal inline hint even if the sender marked it
+   // important. Never transfer CSS priority (or any sender stylesheet).
+   set(key,declaration.slice(colon+1).replace(/\s*!\s*important\s*$/i,''));
   }
  }
  return hints;

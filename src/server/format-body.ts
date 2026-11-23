@@ -1,5 +1,5 @@
 import sanitize from 'sanitize-html';
-import {boundedInteger,formattingTags,imageRejections,maxPictureSources,maxReaderImages,selectImageSource,tableWidth,type ImageRejectionCounts} from '../reader-policy.ts';
+import {boundedInteger,safeFormattingTags,imageRejections,maxPictureSources,maxReaderImages,selectImageSource,tableHeaderScope,tableWidth,type ImageRejectionCounts} from '../reader-policy.ts';
 import {cellPadding,presentationAttributes,presentationHints} from '../reader-presentation.ts';
 
 const marker='mail-image'; // only used in a detached HTML template, never inserted in the page
@@ -10,6 +10,12 @@ const cell:sanitize.Transformer=(tagName,attrs)=>{
  for(const key of ['colspan','rowspan']){
   const span=boundedInteger(attrs[key],12);if(span)attribs[key]=span;
  }
+ const scope=tagName==='th'&&tableHeaderScope(attrs.scope);if(scope)attribs.scope=scope;
+ return {tagName,attribs};
+};
+const column:sanitize.Transformer=(tagName,attrs)=>{
+ const attribs=presentationHints(tagName,attrs),span=boundedInteger(attrs.span,12);
+ if(span)attribs.span=span;
  return {tagName,attribs};
 };
 
@@ -21,7 +27,7 @@ export function formatBody(html:string,appHostname=''):{markup:string;images:str
   const images:string[]=[];
   const rejected:ImageRejectionCounts={};
   const markup=sanitize(html,{
-   allowedTags:[...formattingTags,marker],allowedAttributes:{'*':presentationAttributes,[marker]:['data-index','data-reason','data-image-width','data-image-height'],table:['data-layout','data-width','data-align','data-cell-padding','data-omit-layout'],td:['colspan','rowspan'],th:['colspan','rowspan']},allowedSchemes:[],allowProtocolRelative:false,
+   allowedTags:[...safeFormattingTags,marker],allowedAttributes:{'*':presentationAttributes,[marker]:['data-index','data-reason','data-image-width','data-image-height'],table:['data-layout','data-width','data-align','data-cell-padding','data-omit-layout'],td:['colspan','rowspan'],th:['colspan','rowspan','scope'],col:['span'],colgroup:['span']},allowedSchemes:[],allowProtocolRelative:false,
    // Generated solely by the table transformer, and never serialized in the result.
    exclusiveFilter:frame=>frame.tag==='table'&&frame.attribs['data-omit-layout']==='1',
    nonTextTags:discard,
@@ -45,20 +51,21 @@ export function formatBody(html:string,appHostname=''):{markup:string;images:str
    },
    onCloseTag(){if(stack.pop()?.tag==='picture')pictureDepth--;},
    transformTags:{
-    ...Object.fromEntries([...formattingTags].map(tag=>[tag,(tagName:string,attrs:Record<string,string>)=>({tagName,attribs:presentationHints(tagName,attrs)})])),
+    ...Object.fromEntries([...safeFormattingTags].map(tag=>[tag,(tagName:string,attrs:Record<string,string>)=>({tagName,attribs:presentationHints(tagName,attrs)})])),
     a:(_tag,attrs)=>({tagName:'span',attribs:presentationHints('span',attrs)}),
     [marker]:()=>({tagName:'span',attribs:{}}), // mail cannot supply a marker
     table:(tagName,attrs)=>{
      const attribs:Record<string,string>={},width=tableWidth(attrs.width?.trim());
      if(stack.at(-1)?.omit)return {tagName,attribs:{'data-omit-layout':'1'}};
      if(isLayout(attrs))attribs['data-layout']='presentation';
+     else if(attrs.border?.trim()==='0'&&!attrs.role&&!attrs.summary)attribs['data-layout']='borderless-candidate';
      if(width)attribs['data-width']=width;
      if(attrs.align?.toLowerCase()==='center')attribs['data-align']='center';
      const padding=cellPadding(attrs.cellpadding);
      if(padding)attribs['data-cell-padding']=padding;
      return {tagName,attribs:{...attribs,...presentationHints(tagName,attrs)}};
     },
-    td:cell,th:cell,
+    td:cell,th:cell,colgroup:column,col:column,
     img:(_tag,attrs):sanitize.Tag=>{
      if(stack.at(-1)?.insideOmitted)return {tagName:'span',attribs:{}};
      const source=selectImageSource(attrs,appHostname,stack.at(-1)?.imageSources);
@@ -72,7 +79,7 @@ export function formatBody(html:string,appHostname=''):{markup:string;images:str
      const markerReason=reason==='cid'?'inline':reason==='limit'?'limit':'source';
      const attribs:Record<string,string>=index>=0?{'data-index':String(index)}:{'data-reason':markerReason};
      const width=boundedInteger(attrs.width?.trim(),1200),height=boundedInteger(attrs.height?.trim(),800);
-     if(index>=0&&width){attribs['data-image-width']=width;if(height)attribs['data-image-height']=height;}
+     if(width){attribs['data-image-width']=width;if(height)attribs['data-image-height']=height;}
      return {tagName:marker,attribs,text};
     }
    }
