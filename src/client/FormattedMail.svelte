@@ -290,6 +290,7 @@
     {#each blockedDescriptions as {name}}<li><bdi>{name}</bdi></li>{/each}
    </ol>
   </div>
+  <button class="image-descriptions-end" type="button" onclick={closeDescriptions}>{t('closeImageDescriptions')}</button>
  </dialog>
 {/if}
 <div class="formatted-mail" bind:this={target} hidden={!usable}></div>
@@ -302,13 +303,23 @@
  .image-descriptions-trigger{margin-block:.5rem;min-block-size:44px;max-inline-size:100%;overflow-wrap:anywhere}
  .image-descriptions-dialog[open]{display:grid;grid-template-rows:auto auto minmax(0,1fr);gap:.5rem;
   box-sizing:border-box;inline-size:min(38rem,calc(100% - 1rem));max-inline-size:100%;max-block-size:calc(100dvh - 1rem);
-  padding:.75rem;border:1px solid var(--line);border-radius:.4em;background:var(--surface);color:var(--ink);overflow-wrap:anywhere}
+  padding:.75rem;border:1px solid var(--line);border-radius:.4em;background:var(--surface);color:var(--ink);overflow-wrap:anywhere;overscroll-behavior:contain}
  .image-descriptions-dialog h2{margin:0;font-size:1.125rem}
  .image-descriptions-dialog button{justify-self:start;min-block-size:44px}
  .image-descriptions-dialog [role=region]{min-block-size:0;overflow:auto;overscroll-behavior:contain}
  .image-descriptions-dialog [role=region]:focus-visible{outline-offset:-2px}
  .image-descriptions-dialog ol{margin:0;padding:.25rem .5rem .25rem 2rem;padding-inline:2rem .5rem}
  .image-descriptions-dialog li+li{margin-block-start:.5rem}
+ .image-descriptions-end{display:none}
+ /* When the title and Close would crowd out the list, scroll them with it.
+    Keep the initial Close and provide the same action after the last item. */
+ @media (max-height:280px){
+  :global(html:has(.image-descriptions-dialog:modal)){overflow:hidden;scrollbar-gutter:stable}
+  .image-descriptions-dialog[open]{grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto minmax(min-content,1fr) auto;align-content:start;align-items:start;overflow:auto;padding:.5rem}
+  .image-descriptions-dialog h2{line-height:1.2}
+  .image-descriptions-dialog [role=region]{grid-column:1/-1;overflow:visible}
+  .image-descriptions-end{display:block;grid-column:1/-1}
+ }
  /* The shell is inert in the modal; clipping its layout also removes the
     root scroll range. The document needs neither a height read nor a bridge. */
  :global(#app:has(.full-reader-dialog[open])){block-size:100dvh;overflow:clip}
