@@ -29,7 +29,7 @@ export async function runFolders(){
  click('Oudere');await idle();assert(report().includes('Nested 1')&&!report().includes('Nested 2'),'wrong page');
  document.querySelector('.list .mail').click();await idle();
  assert(document.querySelector('.reader pre')?.textContent.includes('Nested body 1')&&!document.querySelector('.reader :is(iframe,img,.image-controls)'),'incorrect UID read or plain default');layout();
- click('← Terug naar lijst');click('Nieuwere');await idle();assert(report().includes('Nested 2'),'newer page missing');
+ document.querySelector('.mobile-list-return')?.click();await pause(0);click('Nieuwere');await idle();assert(report().includes('Nested 2'),'newer page missing');
  checks.push('unified inbox; nested unsubscribed folder and navigation-only parent; pagination; sanitized read; layout');
  click('Accounts');await idle();click('Werk');await idle();
  const selects=()=>document.querySelector('.sent-settings').querySelectorAll('select');

@@ -8,7 +8,7 @@
  let {body,text,t,requestDocument,subject,messageActions}=$props();
  let target=$state(),status=$state(),available=$state(false),usable=$state(true),consented=$state(false);
  let fullPath=$state(''),pending=$state(false),fullError=$state(false),fullToggle=$state(),active=true;
- let fullDialog=$state(),fullFrame=$state(),backSafe=$state(),showInfo=$state(false);
+ let fullFrame=$state(),backSafe=$state(),showInfo=$state(false);
  let descriptions=$state([]),descriptionsOpen=$state(false),descriptionsTrigger=$state(),descriptionsDialog=$state(),descriptionsClose=$state();
  const blockedDescriptions=$derived(descriptions.filter(({loadable})=>!consented||!loadable));
  let unsupportedSources=$state(0),limited=$state(0),inline=$state(0),rendererRejected=$state(0);
@@ -173,15 +173,21 @@
    fullPath=path;
    await tick();
    if(!active)return;
-   fullDialog.showModal();
    backSafe.focus();
   }catch{if(active){fullPath='';fullError=true;}}
   finally{if(active)pending=false;}
  }
 
  async function resetFull(){
-  fullDialog.close();fullPath='';showInfo=false;
+  fullPath='';showInfo=false;
   await tick();fullToggle?.focus();
+ }
+
+ function fullKeys(event){
+  if(event.key!=='Escape'||event.defaultPrevented)return;
+  event.preventDefault();
+  event.stopPropagation();
+  resetFull();
  }
 
  async function focusFullDocument(){
@@ -232,20 +238,14 @@
  }
 </script>
 
-{#if requestDocument}
- <div class="full-reader-controls">
-  <button type="button" bind:this={fullToggle} aria-describedby="full-reader-privacy" disabled={pending} onclick={allowAll}>{t('loadAll')}</button>
-  <p id="full-reader-privacy" class="note">{t('fullReaderPrivacy')}</p>
-  {#if fullError}<p role="status">{t('fullReaderFailed')}</p>{/if}
- </div>
-{/if}
 {#if fullPath}
- <dialog class="full-reader-dialog" bind:this={fullDialog} aria-label={subject}
-  oncancel={event=>{event.preventDefault();resetFull();}}>
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions (Escape from a focused child returns to safe view) -->
+<section class="full-reader" aria-label={subject} onkeydown={fullKeys}>
   <div class="full-reader-toolbar">
    <button type="button" bind:this={backSafe} onclick={resetFull} aria-label={t('backSafeReader')} title={t('backSafeReader')}><span>{t('backSafeReader')}</span><span class="compact-label" aria-hidden="true">{t('backSafeReaderShort')}</span></button>
    <button type="button" aria-expanded={showInfo} aria-controls="full-reader-info" onclick={()=>showInfo=!showInfo} aria-label={t('fullReaderInfo')} title={t('fullReaderInfo')}><span>{t('fullReaderInfo')}</span><span class="compact-label" aria-hidden="true">{t('fullReaderInfoShort')}</span></button>
-   <button type="button" onclick={focusFullDocument} aria-label={t('fullReaderRead')} aria-description={t('fullReaderKeyboardExit')} title={t('fullReaderKeyboardExit')}><span>{t('fullReaderRead')}</span><span class="compact-label" aria-hidden="true">{t('fullReaderReadShort')}</span></button>
+   <button type="button" onclick={focusFullDocument} aria-label={t('fullReaderRead')} aria-describedby="full-reader-keyboard" title={t('fullReaderKeyboardExit')}><span>{t('fullReaderRead')}</span><span class="compact-label" aria-hidden="true">{t('fullReaderReadShort')}</span></button>
+   <span id="full-reader-keyboard" hidden>{t('fullReaderKeyboardExit')}</span>
   </div>
   <!-- svelte-ignore a11y_no_noninteractive_tabindex (keyboard users must be able to enter the scrollable document) -->
   <iframe class="full-mail-document" title={t('fullReaderTitle')} sandbox="" referrerpolicy="no-referrer" src={fullPath} bind:this={fullFrame} tabindex="0" inert={showInfo}></iframe>
@@ -256,9 +256,16 @@
    {@render messageActions()}
    {#if text.trim()}<details class="mail-text-view"><summary>{t('textView')}</summary><pre>{text}</pre></details>{/if}
   </div>
- </dialog>
+ </section>
 {/if}
-<div>
+<div class="safe-reader" hidden={!!fullPath}>
+{#if requestDocument}
+ <div class="full-reader-controls">
+  <button type="button" bind:this={fullToggle} aria-describedby="full-reader-privacy" disabled={pending} onclick={allowAll}>{t('loadAll')}</button>
+  <p id="full-reader-privacy" class="note">{t('fullReaderPrivacy')}</p>
+  {#if fullError}<p role="status">{t('fullReaderFailed')}</p>{/if}
+ </div>
+{/if}
 {#if available}
  <div class="image-controls">
   {#if !consented}
@@ -301,10 +308,10 @@
  </dialog>
 {/if}
 <div class="formatted-mail" bind:this={target} hidden={!usable}></div>
-</div>
 {#if usable||sourceTotal||rendererRejected}
  {#if text.trim()}<details class="mail-text-view"><summary>{t('textView')}</summary><pre>{text}</pre></details>{/if}
 {:else}<p class="note">{t('htmlUnavailable')}</p>{#if text.trim()}<pre>{text}</pre>{/if}{/if}
+</div>
 
 <style>
  .image-descriptions-trigger{margin-block:.5rem;min-block-size:44px;max-inline-size:100%;overflow-wrap:anywhere}
@@ -327,18 +334,16 @@
   .image-descriptions-dialog [role=region]{grid-column:1/-1;overflow:visible}
   .image-descriptions-end{display:block;grid-column:1/-1}
  }
- /* The shell is inert in the modal; clipping its layout also removes the
-    root scroll range. The document needs neither a height read nor a bridge. */
- :global(#app:has(.full-reader-dialog[open])){block-size:100dvh;overflow:clip}
- .full-reader-dialog[open]{position:fixed;inset:0;display:grid;grid-template-rows:auto minmax(0,1fr);
-  inline-size:100%;block-size:100dvh;max-inline-size:none;max-block-size:none;
-  margin:0;padding:0;border:0;overflow:clip;background:var(--surface);color:var(--ink)}
+ /* The pane supplies a bounded track. Only the opaque document (or the
+    options panel in its place) scrolls; no document-size bridge is needed. */
+ .full-reader{display:grid;grid-template-rows:auto minmax(0,1fr);inline-size:100%;block-size:100%;min-block-size:0;
+  overflow:clip;background:var(--surface);color:var(--ink)}
  .full-reader-toolbar{display:flex;flex-wrap:wrap;gap:4px 8px;padding:6px 8px}
  .full-reader-toolbar button{max-inline-size:100%;overflow-wrap:anywhere}
  .full-reader-toolbar .compact-label{display:none}
  /* Keep space for the document at high zoom or in a short window, without
     reducing the type size or creating a second scrolling area. */
- @media (max-width:240px), (max-height:210px){
+ @media (max-width:400px), (max-height:380px){
   .full-reader-toolbar{gap:2px;padding:3px}
   .full-reader-toolbar button{min-inline-size:44px;padding:0 2px}
   .full-reader-toolbar button:focus-visible{outline-offset:-4px}
@@ -353,5 +358,5 @@
  .full-mail-document{display:block;inline-size:100%;block-size:100%;border:0;background:transparent;color-scheme:light}
  .full-mail-document[inert]{visibility:hidden}
  .full-mail-document:focus-visible{outline-offset:-3px}
- .full-reader-info{overflow:auto;overflow-wrap:anywhere;padding:8px 16px}
+ .full-reader-info{overflow:auto;overscroll-behavior:contain;overflow-wrap:anywhere;padding:8px 16px}
 </style>

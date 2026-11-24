@@ -42,7 +42,7 @@ export async function runContext(){
   await showSent();const paths=[];let faults=0;
   window.fetch=(url,...args)=>{paths.push(String(url));if(String(url)===inboxURL&&faults++===0)return Promise.resolve(Response.json({error:'TRY_LATER'},{status:429}));return native(url,...args);};
   row().click();await idle();assert(readTitle()===sentSubject&&paths.includes(sentRead),'Normal Sent read used wrong source');
-  press('← Terug naar lijst');press('Inbox');await idle();
+  document.querySelector('.mobile-list-return')?.click();press('Inbox');await idle();
   assert(faults===1&&document.querySelector('[role=alert]')?.textContent.includes('Te veel pogingen'),'Expected 429 not visible');
   const stale=rowSubject();if(stale===sentSubject&&!row().disabled){row().click();await idle();}
   assert(!paths.includes(inboxRead),`Sent click opened ${readTitle()} via Inbox`);

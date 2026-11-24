@@ -10,7 +10,7 @@
  let logged=false,password='',csrf='',error='',notice='',busy=false,accounts=[],messages=[],drafts=[],filter='all',page=0,hasMore=false,view='inbox',reader=null,editor=null,settings=null,dirty=false;
  let loginName='',role='',identity='',users=[],newLogin='',newPassword='';
  let activeFolder=null,folderIndex=0,folderValidity='',filingNotice='',observation='';
- let explicitAccount=null,folderEpochs={},mobileNav=false,navToggle,lastReadButton;
+ let explicitAccount=null,folderEpochs={},mobileNav=false,navToggle,lastReadButton,readerPane;
  let language='nl',theme='system',readerFormat='plain',preferenceForm,returnView='inbox';
  $: t=translate.bind(null,language);
  $: locale=language==='en'?'en-GB':'nl-NL';
@@ -46,7 +46,11 @@
  async function focusView(stamp=navigation){await tick();if(logged&&stamp===navigation)document.querySelector('.workspace h1')?.focus();}
  function goView(next,preserveRows=false){enter(next,preserveRows);mobileNav=false;return focusView();}
  function toggleMobile(){mobileNav=!mobileNav;}
- function closeNavigation(e){if(e.key!=='Escape'||!mobileNav||!matchMedia('(max-width:760px)').matches||document.querySelector('.full-reader-dialog[open]'))return;e.preventDefault();mobileNav=false;navToggle?.focus();}
+ function closeNavigation(e){
+  if(e.key!=='Escape'||e.defaultPrevented||document.querySelector('dialog:modal'))return;
+  if(mobileNav&&matchMedia('(max-width:760px)').matches){e.preventDefault();mobileNav=false;navToggle?.focus();}
+  else if(reader){e.preventDefault();closeReader();}
+ }
  function setAccounts(owned){
   if(explicitAccount&&explicitAccount!=='all'&&!owned.some(a=>a.id===explicitAccount))explicitAccount=null;
   const next=accountFilter(owned,explicitAccount);
@@ -189,7 +193,8 @@
   reader=null;
   const loaded=await api(m.source.url);
   if(!current()||!messages.includes(m))return;
-  lastReadButton=button;reader=loaded;await tick();if(current()&&reader===loaded)document.getElementById('readtitle')?.focus();
+  lastReadButton=button;reader=loaded;mobileNav=false;await tick();
+  if(current()&&reader===loaded){readerPane.scrollTop=0;document.getElementById('readtitle')?.focus();}
  }));}
  async function closeReader(){const stamp=navigation;reader=null;await tick();if(stamp!==navigation)return;if(lastReadButton?.isConnected)lastReadButton.focus();else await focusView(stamp);}
  function editAccount(a){settings=a?structuredClone(a):{label:'',address:'',imap:emptyEndpoint(993),smtp:emptyEndpoint(465)};settings.imap.password='';settings.smtp.password='';enter('accounts');notice='';}
@@ -237,6 +242,7 @@
  {#if logged}
   <span class="tag">{identity}</span>
   <div class="header-actions">
+   {#if reader}<button class="mobile-list-return" onclick={closeReader} aria-controls="message-list">{t('returnToMessages')}</button>{/if}
    <button class="mobile-nav-toggle" bind:this={navToggle} onclick={toggleMobile} aria-controls="mailbox-nav" aria-expanded={mobileNav}>{t('mailboxNav')}</button>
    <button onclick={openPreferences} disabled={view==='preferences'}>{t('settings')}</button>
    <button onclick={logout} disabled={busy}>{t('logout')}</button>
@@ -254,7 +260,7 @@
   {#if editor}<p>{t('reauthDraft')}</p>{/if}
  </main>
 {:else}
- <div class="shell" class:reading={!!reader}>
+ <div class="shell" class:reading={!!reader} class:mail-workspace={view==='inbox'||view==='folder'}>
   <aside id="mailbox-nav" class:mobile-open={mobileNav} aria-label={t('mailboxNav')}>
    <div class="eyebrow">{t('mailboxes')}</div>
    {#if accounts.length>1}
@@ -284,7 +290,7 @@
   </aside>
   <main class="workspace">
    {#if view==='inbox'||view==='folder'}
-    <section class="list">
+    <section class="list" id="message-list">
      <div class="listhead">
       <div class="eyebrow">{t('overview')}</div>
       <h1 id="inboxtitle" tabindex="-1">{#if view==='folder'}<bdi>{activeFolder.path}</bdi>{:else}{t('inbox')}{/if}</h1>
@@ -305,10 +311,11 @@
      {#if !messages.length}<p class="empty">{t('emptyMail')} {accounts.length?'':t('addFirst')}</p>{/if}
      <div class="actions"><button disabled={currentPage===0||busy} onclick={()=>pageMail(currentPage-1)}>{t('newer')}</button><button disabled={!hasMore||busy} onclick={()=>pageMail(currentPage+1)}>{t('older')}</button></div>
     </section>
-    <section class="reader">
+    <section class="reader" bind:this={readerPane}>
      {#if reader}
-      <button onclick={closeReader}>{t('backToList')}</button><span class="tag">{reader.accountLabel} · {reader.address}</span>
+      <div class="reader-meta"><span class="tag">{reader.accountLabel} · {reader.address}</span>
       <h2 id="readtitle" tabindex="-1">{reader.subjectMissing?t('noSubject'):reader.subject}</h2><p>{reader.from}</p><p class="note">{t('safeView')}</p>
+      </div>
       {#if readerFormat==='html'&&(reader.formatted||reader.readerIdentity)}
        {#key reader}
         <FormattedMail body={reader.formatted} text={reader.text} {t} requestDocument={reader.readerIdentity?()=>api('/api/reader/document','POST',reader.readerIdentity):null} subject={reader.subjectMissing?t('noSubject'):reader.subject}>
@@ -316,7 +323,6 @@
           <p>{reader.from} · {reader.accountLabel} · {reader.address}</p>
           {#if reader.attachments.length}<p>{t('attachments')}</p>{/if}
           <div class="actions">
-           <button onclick={closeReader}>{t('backToList')}</button>
            <button class="primary" onclick={()=>newDraft(reader)} disabled={!!editor&&dirty}>{t('reply')}</button>
           </div>
          {/snippet}
@@ -327,8 +333,10 @@
        {:else if readerFormat!=='html'&&reader.formatted?.images.length}<p class="note">{t('plainImageNote')}</p>{/if}
        <pre>{reader.text}</pre>
       {/if}
+      <div class="reader-actions">
       {#if reader.attachments.length}<p>{t('attachments')}</p>{/if}
       <button class="primary" onclick={()=>newDraft(reader)} disabled={!!editor&&dirty}>{t('reply')}</button>
+      </div>
      {:else}<p class="empty">{t('chooseMessage')}</p>{/if}
     </section>
    {:else if view==='compose'&&editor}

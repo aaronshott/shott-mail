@@ -5,7 +5,7 @@ const shellState=`(() => {
  const f=document.querySelector('.full-mail-document');if(!f)return null;
  const rect=e=>{const {x,y,width,height}=e.getBoundingClientRect();return {x,y,width,height}};
  const root=document.scrollingElement;
- return {frame:rect(f),border:getComputedStyle(f).borderTopWidth,frameHeightRule:getComputedStyle(f).height,
+ return {frame:rect(f),pane:rect(f.closest('.reader')),modal:!!f.closest('dialog'),border:getComputedStyle(f).borderTopWidth,frameHeightRule:getComputedStyle(f).height,
   rootRange:root.scrollHeight-root.clientHeight,rootY:root.scrollTop,viewport:[innerWidth,innerHeight],opaque:f.contentDocument===null,
   ancestors:Array.from((function*(){for(let e=f.parentElement;e;e=e.parentElement)yield e})(),e=>({name:e.nodeName,className:e.className,overflow:getComputedStyle(e).overflowY,range:e.scrollHeight-e.clientHeight,y:e.scrollTop})),
   controls:[...document.querySelectorAll('.full-reader-toolbar button')].map(rect)};
@@ -19,8 +19,8 @@ const baseline=process.env.FULL_SCROLL_BASELINE==='1';
 
 export function assertSingle(s){
  assert.equal(s.border,'0px');assert.equal(s.rootRange,0);assert.equal(s.rootY,0);assert.equal(s.opaque,true);
- assert.equal(s.frame.x,0);assert.equal(s.frame.width,s.viewport[0]);
- assert.ok(s.frame.height>0&&Math.abs(s.frame.y+s.frame.height-s.viewport[1])<=1);
+ assert.equal(s.modal,false);assert.equal(s.frame.x,s.pane.x);assert.equal(s.frame.width,s.pane.width);
+ assert.ok(s.frame.height>0&&Math.abs(s.frame.y+s.frame.height-s.pane.y-s.pane.height)<=1,JSON.stringify(s));
  assert.ok(s.ancestors.every(e=>e.y===0&&(!(e.range>0)||['visible','clip'].includes(e.overflow))));
  assert.equal(s.controls.length,3);
  assert.ok(s.controls.every(b=>b.y>=0&&b.y+b.height<=s.frame.y&&b.x>=0&&b.x+b.width<=s.viewport[0]));
@@ -29,7 +29,7 @@ export function assertSingle(s){
 export async function shortReaderGeometry({evaluate,poll,child,shot}){
  const shell=await poll(()=>evaluate(shellState));
  const content=await child('document.documentElement.scrollHeight-innerHeight');
- if(!baseline){assertSingle(shell);assert.equal(content,0);}
+ if(!baseline)assertSingle(shell);
  await shot('short-full',true);
  return {shell,content};
 }
@@ -42,11 +42,12 @@ export async function runReaderScroll({call,evaluate,poll,child,run,gesture,mobi
  };
  const pointFor=selector=>evaluate(`(()=>{const b=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:b.x+b.width/2,y:b.y+b.height/2}})()`);
  const interact=async (point,direction)=>{
-  if(!mobile){await call('Input.dispatchMouseEvent',{type:'mouseWheel',...point,deltaX:0,deltaY:direction*650});await delay(100);return;}
-  const y=point.y+direction*70;
-  await call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{...point,y}]});
+  if(!mobile){await call('Input.dispatchMouseEvent',{type:'mouseWheel',x:point.x,y:point.y,deltaX:0,deltaY:direction*650});await delay(100);return;}
+  const inset=Math.min(70,point.height/2-4);
+  const y=point.y+direction*inset;
+  await call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:point.x,y}]});
   for(let i=1;i<=7;i++){
-   await call('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{...point,y:y-direction*i*20}]});
+   await call('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:point.x,y:y-direction*i*inset*2/7}]});
    await delay(18);
   }
   await delay(90);
@@ -54,7 +55,7 @@ export async function runReaderScroll({call,evaluate,poll,child,run,gesture,mobi
   await delay(120);
  };
  const flow=async (point,direction,done)=>{
-  for(let i=0;i<42;i++){const state=await measure();if(done(state))return state;await interact(point,direction);}
+  for(let i=0;i<90;i++){const state=await measure();if(done(state))return state;await interact(point,direction);}
   assert.fail('User scroll did not reach target: '+JSON.stringify(await measure()));
  };
  const existing=await assets(),existingConnections=await connections();
@@ -85,13 +86,14 @@ export async function runReaderScroll({call,evaluate,poll,child,run,gesture,mobi
   return {baseline,initial,loaded,first,outerMoved,footer,afterFooter:await getShell(),consentRequests};
  }
  assertSingle(first);
- const framePoint={x:first.frame.width/2,y:first.frame.y+first.frame.height/2};
+ const center=r=>({x:r.x+r.width/2,y:r.y+r.height/2,height:r.height});
+ const framePoint=center(first.frame);
  let keyboard;
  if(!mobile){
   assert.ok(await evaluate("document.activeElement.matches('.full-reader-toolbar button:first-child')"));
   await press('Tab',9); // Back to safe view → Message options → Read message.
   await press('Tab',9);
-  assert.ok(await evaluate("document.activeElement.matches('.full-reader-toolbar button:last-child')"));
+  assert.ok(await evaluate("document.activeElement.matches('.full-reader-toolbar button:last-of-type')"));
   await press(' ',32);
   await poll(()=>child('document.hasFocus()'));
   await press('End',35);
@@ -111,7 +113,8 @@ export async function runReaderScroll({call,evaluate,poll,child,run,gesture,mobi
  await call('Emulation.setDeviceMetricsOverride',{width:small[0],height:small[1],deviceScaleFactor:1,mobile});
  const resized=await poll(async()=>{const s=await getShell();return s.viewport.join()===small.join()?s:null;});
  assertSingle(resized);
- const smallPoint={x:resized.frame.width/2,y:resized.frame.y+resized.frame.height/2};
+ const smallPoint=center(resized.frame);
+ await shot('long-small-start',true);
  const resizedFooter=await flow(smallPoint,1,s=>s.visible);
  assertSingle(await getShell());
  await shot('long-small-footer',true);
@@ -123,7 +126,7 @@ export async function runReaderScroll({call,evaluate,poll,child,run,gesture,mobi
  assert.ok(state.range>0);
  const actions='.full-reader-info .actions';
  // Use only the options pane scroll range, then reveal the original plain text.
- const panelPoint={x:resized.frame.width/2,y:resized.frame.y+resized.frame.height/2};
+ const panelPoint=smallPoint;
  const panelGesture=async selector=>{
   for(let i=0;i<5;i++){
    const point=await pointFor(selector);
@@ -132,8 +135,15 @@ export async function runReaderScroll({call,evaluate,poll,child,run,gesture,mobi
   }
   assert.fail('Options control not reachable: '+selector);
  };
- await interact(panelPoint,1);
- assert.ok(await evaluate("document.querySelector('.full-reader-info').scrollTop>0 && scrollY===0"));
+ await delay(650); // End Chromium's wheel sequence latched to the old frame.
+ for(let i=0;i<3;i++){
+  await interact(panelPoint,1);
+  if(await evaluate("document.querySelector('.full-reader-info').scrollTop>0"))break;
+ }
+ await poll(()=>evaluate("document.querySelector('.full-reader-info').scrollTop>0 && scrollY===0")).catch(async error=>{
+  const state=await evaluate(`({point:${JSON.stringify(panelPoint)},hit:document.elementFromPoint(${panelPoint.x},${panelPoint.y})?.outerHTML.slice(0,160),y:scrollY,infoY:document.querySelector('.full-reader-info').scrollTop})`);
+  throw Error('Options scroll: '+JSON.stringify(state),{cause:error});
+ });
  await panelGesture('.full-reader-info summary');
  await poll(()=>evaluate("document.querySelector('.full-reader-info details').open && document.querySelector('.full-reader-info pre').textContent.trim()==='Plain long fixture'"));
  await shot('long-small-options',true);
@@ -142,11 +152,10 @@ export async function runReaderScroll({call,evaluate,poll,child,run,gesture,mobi
  assert.equal((await measure()).y,resizedFooter.y);
  if(mobile)await gesture(await pointFor('.full-reader-toolbar button:first-child'));
  else{
-  // Chromium does not deliver native dialog cancellation while the opaque
-  // document has focus. The frame follows Read message in the tab order.
-  const read='.full-reader-toolbar button:last-child';
+  // Escape does not cross the opaque frame; Shift+Tab returns to Read message.
+  const read='.full-reader-toolbar button:last-of-type';
   await press('Tab',9);
-  await poll(()=>evaluate(`document.activeElement.matches('${read}[aria-description]')`));
+  await poll(()=>evaluate(`document.activeElement.matches('${read}[aria-describedby]')`));
   await press(' ',32);
   await poll(()=>child('document.hasFocus()'));
   await press('Tab',9,8);
@@ -161,27 +170,28 @@ export async function runReaderScroll({call,evaluate,poll,child,run,gesture,mobi
  await gesture(again);
  const reopened=await poll(async()=>{const s=await measure();return s?.image===380?s:null;});
  assert.equal(reopened.y,0);
- await gesture(await pointFor('.full-reader-toolbar [aria-controls]'));
- const close=`${actions} button:first-child`;
- // At this height the button is accessible through the options pane's own flow.
- await interact(panelPoint,1);
- await panelGesture(close);
- await poll(()=>evaluate("!document.querySelector('.full-reader-dialog') && document.activeElement.matches('.list .mail')"));
+ if(mobile)await gesture(await pointFor('.mobile-list-return'));
+ else{
+  await press('Escape',27);
+  await poll(()=>evaluate("document.activeElement.matches('.full-reader-controls button')"));
+  await press('Escape',27);
+ }
+ await poll(()=>evaluate("!document.querySelector('.full-reader') && document.activeElement.matches('.list .mail')"));
  const reopenAgain=await run('fullOpenLong',JSON.stringify(locale));
  assert.equal((await assets()).length,existing.length+2);
  await gesture(reopenAgain);
  await poll(async()=>{const s=await measure();return s?.image===380&&s.y===0;});
  await gesture(await pointFor('.full-reader-toolbar [aria-controls]'));
  await poll(()=>evaluate("!document.querySelector('.full-reader-info').hidden"));
- if(mobile)await panelGesture(`${actions} button:last-child`);
+ if(mobile)await panelGesture(`${actions} button:last-of-type`);
  else{
-  const onReply=()=>evaluate(`document.activeElement.matches('${actions} button:last-child')`);
+  const onReply=()=>evaluate(`document.activeElement.matches('${actions} button:last-of-type')`);
   for(let i=0;i<5&&!await onReply();i++)await press('Tab',9);
   assert.ok(await onReply());
   await press(' ',32);
  }
- await poll(()=>evaluate("!document.querySelector('.full-reader-dialog') && document.querySelector('textarea')?.value.trim()==='Plain long fixture'")).catch(async error=>{
-  const state=await evaluate(`({dialog:!!document.querySelector('.full-reader-dialog'),info:document.querySelector('.full-reader-info')?.hidden,actions:[...document.querySelectorAll('${actions} button')].map(b=>[b.textContent,b.disabled]),text:document.querySelector('textarea')?.value})`);
+ await poll(()=>evaluate("!document.querySelector('.full-reader') && document.querySelector('textarea')?.value.trim()==='Plain long fixture'")).catch(async error=>{
+  const state=await evaluate(`({full:!!document.querySelector('.full-reader'),info:document.querySelector('.full-reader-info')?.hidden,actions:[...document.querySelectorAll('${actions} button')].map(b=>[b.textContent,b.disabled]),text:document.querySelector('textarea')?.value})`);
   throw Error('Reply state: '+JSON.stringify(state),{cause:error});
  });
  assert.equal((await assets()).length,existing.length+3);

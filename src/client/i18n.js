@@ -29,7 +29,7 @@ const catalog={
  accounts:['Accounts','Accounts'], users:['Gebruikers','Users'], resumeDraft:['Actief concept hervatten','Resume active draft'],
  overview:['JE OVERZICHT','YOUR OVERVIEW'], refresh:['Vernieuwen','Refresh'], page:['Pagina {page} per account · nieuwste eerst','Page {page} per account · newest first'],
  emptyMail:['Geen berichten geladen.','No messages loaded.'], addFirst:['Voeg eerst een account toe.','Add an account first.'], newer:['Nieuwere','Newer'], older:['Oudere','Older'],
- backToList:['← Terug naar lijst','← Back to list'], safeView:['Links en actieve inhoud zijn uitgeschakeld.','Links and active content are disabled.'],
+ returnToMessages:['Berichten','Messages'], safeView:['Links en actieve inhoud zijn uitgeschakeld.','Links and active content are disabled.'],
  textView:['Tekstweergave','Plain-text view'], attachments:['Bijlagen aanwezig; downloaden volgt na B1.','Attachments present; downloads will be available after B1.'],
  imagePrivacy:['Externe afbeeldingen zijn geblokkeerd. Als je ze laadt, maakt je browser rechtstreeks verbinding. De beeldserver kan je IP-adres zien en bijhouden dat je dit bericht hebt geopend. Je browser kan cookies van de beeldserver meesturen.','Remote images are blocked. If you load them, your browser connects directly. The image host can see your IP address and track that you opened this message. Your browser may send cookies belonging to the image host.'],
  loadImages:['Externe afbeeldingen laden','Load remote images'],

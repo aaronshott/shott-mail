@@ -13,7 +13,7 @@ a{color:var(--link)}
 :focus-visible{outline-color:var(--focus)}
 .error{background:var(--danger-bg);color:var(--danger-ink);border-color:var(--danger-line)}
 .header-actions{margin-inline-start:auto;display:flex;gap:8px;flex-wrap:wrap}
-.mobile-nav-toggle{display:none}
+.mobile-nav-toggle,.mobile-list-return{display:none}
 #mailbox-nav nav{display:grid;grid-template-columns:minmax(0,1fr);overflow:visible}
 #mailbox-nav button{overflow-wrap:anywhere}
 #mailbox-nav nav>button[aria-current="page"]{background:var(--pale);border-inline-start:4px solid var(--link);font-weight:650}
@@ -45,7 +45,8 @@ a{color:var(--link)}
 .account-folders :is(.folder-account,.folder-toggle,.folder-select):focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
 .account-folders small{display:block;color:var(--muted);overflow-wrap:anywhere}
 .mail time{font-size:.85rem;color:var(--muted)}
-.mail-text-view,.reader>.image-controls,.reader>.full-reader-controls{max-inline-size:70ch}
+.mail-text-view,.full-reader-controls{max-inline-size:70ch}
+.reader-meta>.tag{display:block;margin-top:15px}
 .formatted-mail{max-inline-size:780px;container-type:inline-size;overflow-wrap:anywhere;overflow:auto;min-inline-size:0;line-height:1.6}
 .formatted-mail.mail-authored-palette{background:#fff;color:#202124}
 .formatted-mail :is(div,p,td,th,span,h1,h2,h3,h4,h5,h6,blockquote,ul,ol,pre,hr){box-sizing:border-box;max-inline-size:100%}
@@ -98,8 +99,38 @@ a{color:var(--link)}
 .image-controls [role=status]{margin:0}
 .image-controls [role=status]:empty{display:none}
 @media(max-width:760px){
- .mobile-nav-toggle{display:inline-block}
+ .mobile-nav-toggle,.mobile-list-return{display:inline-block}
  #mailbox-nav:not(.mobile-open){display:none}
  #mailbox-nav>.primary{margin-top:5px}
  .header-actions{margin-inline-start:0}
+}
+
+/* Fit mail between the actual header and footer, including when localized
+   chrome wraps. Do not constrain compose, settings or login. */
+@media(width > 760px){
+ #app:has(>.mail-workspace){display:grid;block-size:100dvh;grid-template-rows:auto minmax(0,1fr) auto auto}
+ .mail-workspace{min-block-size:0;grid-template-rows:minmax(0,1fr)}
+ .mail-workspace :is(#mailbox-nav,.list,.reader){overflow:auto;overscroll-behavior:contain}
+ .mail-workspace #mailbox-nav>*{flex-shrink:0}
+}
+.reader:has(>.full-reader){padding:0;overflow:clip}
+.reader:has(>.full-reader)>:is(.reader-meta,.reader-actions){display:none}
+@media(max-width:760px){
+ #app:has(.full-reader){display:grid;block-size:100dvh;grid-template-rows:auto minmax(0,1fr) auto auto}
+ .mail-workspace:has(.full-reader){display:grid;min-block-size:0;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
+ .mail-workspace:has(.full-reader)>.workspace{display:flex;min-block-size:0}
+ .mail-workspace:has(.full-reader):has(>.mobile-open){grid-template-rows:minmax(0,2fr) minmax(0,3fr)}
+ .mail-workspace:has(.full-reader)>.mobile-open{overflow:auto;overscroll-behavior:contain}
+}
+@media(max-height:380px){
+ #app:has(.full-reader)>header{padding:4px 8px;gap:4px 8px}
+ #app:has(.full-reader)>footer{padding:4px 8px}
+ #app:has(.full-reader) .header-actions{gap:4px}
+ #app:has(.full-reader) .header-actions button{padding-inline:6px;margin-inline:0}
+}
+@media(max-width:400px) and (max-height:380px){
+ /* Keep the navigation, but give the reading track the decorative masthead's row. */
+ #app:has(.full-reader)>header>.brand{display:none}
+ #app:has(.full-reader) .header-actions{width:100%;gap:2px}
+ #app:has(.full-reader) .header-actions button{padding:2px 4px;min-block-size:32px}
 }

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {runReaderScroll,shortReaderGeometry} from './browser-reader-scroll.mjs';
+import {paneLayout} from './browser-pane-layout.mjs';
 const fixturePaths=['/full-background.svg','/full-font.ttf','/full-mail.css','/header-wordmark.png','/sizing-portrait.png'];
 const imagePaths=['/header-wordmark.png','/sizing-portrait.png'];
 const sorted=xs=>xs.map(r=>r.path).sort();
@@ -8,7 +9,7 @@ const childState=`(() => {
  if(!h||document.readyState!=='complete'||document.fonts.status!=='loaded'||img.some(i=>!i.naturalWidth))return null;
  const rect=e=>{const r=e.getBoundingClientRect();return [r.x,r.y,r.width,r.height]};
  const p=document.querySelector('.inline'),grid=document.querySelector('.grid');
- return {origin:self.origin,referrer:document.referrer,viewport:[innerWidth,innerHeight],scrollWidth:document.documentElement.scrollWidth,
+ return {origin:self.origin,referrer:document.referrer,viewport:[innerWidth,innerHeight],clientWidth:document.documentElement.clientWidth,scrollWidth:document.documentElement.scrollWidth,
   logo:rect(img[0]),portrait:rect(img[1]),column:rect(grid.querySelector('p')),cover:getComputedStyle(h).backgroundColor,
   background:getComputedStyle(h).backgroundImage,padding:getComputedStyle(p).paddingLeft,margin:getComputedStyle(p).marginTop,
   fonts:[...document.fonts].map(f=>[f.family,f.status]),active:document.querySelectorAll('form,button,input,iframe,script,[download],a[href]').length};
@@ -28,6 +29,7 @@ export async function runFullReader({call,evaluate,poll,run,gesture,imageFrames,
  assert.deepEqual(observed,[]);
  await shot('full-blocked',true);
  const assets=()=>evaluate("fetch('/__test_image_requests').then(r=>r.json())",true);
+ if(process.env.PANE_LAYOUT_ONLY==='1')return {passed:true,layout:await paneLayout({call,evaluate,poll,run,gesture,mobile,shot,locale,assets})};
  const connections=()=>evaluate("fetch('/__test_image_connections').then(r=>r.json())",true);
  const ownAssets=()=>evaluate("fetch('/__test_full_same_origin_requests').then(r=>r.json())",true);
  await gesture(before.point);
@@ -49,7 +51,7 @@ export async function runFullReader({call,evaluate,poll,run,gesture,imageFrames,
  const rendered=await poll(()=>child(childState));
  const checks=r=>{
   assert.equal(r.origin,'null');assert.equal(r.referrer,'');assert.equal(r.active,0);
-  assert.equal(r.scrollWidth,r.viewport[0]);assert.deepEqual(r.logo.slice(2),[120,28]);assert.deepEqual(r.portrait.slice(2),[120,240]);
+  assert.equal(r.scrollWidth,r.clientWidth);assert.deepEqual(r.logo.slice(2),[120,28]);assert.deepEqual(r.portrait.slice(2),[120,240]);
   assert.equal(r.cover,mobile?'rgb(31, 65, 103)':'rgb(23, 76, 54)');
   assert.ok(mobile?r.column[0]===r.portrait[0]&&r.column[1]>r.portrait[1]:r.column[0]>r.portrait[0]&&r.column[1]===r.portrait[1]);
   assert.equal(r.padding,'13px');assert.equal(r.margin,'19px');assert.match(r.background,/full-background\.svg/);

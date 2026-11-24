@@ -11,6 +11,11 @@ const requests=()=>fetch('/__test_image_requests').then(r=>r.json());
 const connections=()=>fetch('/__test_image_connections').then(r=>r.json());
 const nav=()=>{const b=document.querySelector('.mobile-nav-toggle');if(b.getClientRects().length&&b.getAttribute('aria-expanded')==='false')b.click();};
 const reader=()=>document.querySelector('.reader');
+function returnToList(){
+ const control=document.querySelector('.mobile-list-return');
+ if(control?.getClientRects().length)control.click();
+ else window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}));
+}
 let words;
 export async function beforeConsent(lang){
  words=lang==='en'?{settings:'Settings',back:'Back',list:'← Back to list',load:'Load remote images',tracking:'IP address',reply:'Reply'}:{settings:'Instellingen',back:'Terug',list:'← Terug naar lijst',load:'Externe afbeeldingen laden',tracking:'IP-adres',reply:'Beantwoorden'};
@@ -21,7 +26,7 @@ export async function beforeConsent(lang){
  const prefs=document.querySelectorAll('main select');
  assert(prefs[2]?.value==='plain'&&prefs[2].selectedOptions[0].textContent.includes('standaard'),'missing plain default setting');
  set(prefs[0],lang);set(prefs[1],'dark');set(prefs[2],'html');await pause(0);click('Instellingen opslaan');await idle();click(words.back);
- await open('plain');assert(reader().querySelector('pre')?.textContent.includes('<b>literal</b>')&&!button(words.load),'plain-only MIME did not fall back');click(words.list);
+ await open('plain');assert(reader().querySelector('pre')?.textContent.includes('<b>literal</b>')&&!button(words.load),'plain-only MIME did not fall back');returnToList();
  await open('work');
  const body=reader().querySelector('.formatted-mail');
  assert(body?.querySelector('strong')?.textContent==='work'&&body.textContent.includes('Newsletter'),'formatting lost');
@@ -39,7 +44,7 @@ export async function afterConsent(){
  assert(document.documentElement.scrollWidth<=innerWidth,'images cause horizontal overflow');
  const observed=await requests();assert(observed.map(r=>r.path).sort().join(',')==='/final.png,/redirect.png,/work.png'&&observed.every(r=>!r.referer&&!r.authorization),'unexpected request or metadata: '+JSON.stringify(observed));
  async function blocked(name){await open(name);assert(button(words.load)&&!reader().querySelector('img,iframe'),'consent leaked to '+name);}
- click(words.list);await until(()=>document.activeElement===buttonRow('work'),'closing reader did not restore row focus');await blocked('work');
+ returnToList();await until(()=>document.activeElement===buttonRow('work'),'closing reader did not restore row focus');await blocked('work');
  await blockedWithoutClose('second');
  click(words.settings);await pause(0);assert(!reader(),'settings did not dismiss reader');click(words.back);await blocked('work');
  nav();await pause(0);const accounts=document.querySelector('aside select');const priv=[...accounts.options].find(o=>o.text.includes('private@example.test'));set(accounts,priv.value);await idle();await blocked('private');
@@ -49,7 +54,7 @@ export async function afterConsent(){
  return {passed:true,observed,checks:['plain default and plain fallback; localized safe HTML','zero observer connections or requests until a trusted click or tap','inert formatting and plain alternative; isolated image controls with tracking notice','resets across same UID reopen, same sender, Settings and another account with the same UID','no SMTP, APPEND or send POST; reply uses plain MIME']};
  async function blockedWithoutClose(name){
   // In mobile the list is hidden while reading; the desktop also tests direct replacement.
-  if(!document.querySelector('.list').getClientRects().length)click(words.list);
+  if(!document.querySelector('.list').getClientRects().length)returnToList();
   await blocked(name);
  }
 }
@@ -74,11 +79,11 @@ export async function fullStart(lang){
  return {point:fullPoint('images'),connections:0,requests:0};
 }
 export function fullPoint(mode){const control=button(words[mode]);assert(control,'missing consent control');control.scrollIntoView({block:'center'});const box=control.getBoundingClientRect();return {x:box.x+box.width/2,y:box.y+box.height/2};}
-export async function fullReopen(){click(words.list);await open('full');assert(button(words.images)&&button(words.all)&&!reader().querySelector('iframe'),'reopen retained consent');return fullPoint('all');}
+export async function fullReopen(){returnToList();await open('full');assert(button(words.images)&&button(words.all)&&!reader().querySelector('iframe'),'reopen retained consent');return fullPoint('all');}
 export async function fullReset(){
  assert([...reader().querySelectorAll('.mail-text-view pre')].some(e=>e.textContent.trim()==='Plain full fixture'),'text alternative missing');
  click(words.safe);await pause(0);assert(!reader().querySelector('.full-mail-document'),'safe view did not remove full frame');
- await fullReopen();if(!document.querySelector('.list').getClientRects().length)click(words.list);
+ await fullReopen();if(!document.querySelector('.list').getClientRects().length)returnToList();
  await open('work');assert(button(words.all)&&!reader().querySelector('iframe'),'message switch retained consent');
 }
 export async function fullOpenLong(lang){
@@ -182,13 +187,12 @@ export async function unhintedCrop(theme,lang='en'){
   overflow:body.scrollWidth>body.clientWidth||document.documentElement.scrollWidth>innerWidth,requests:await requests(),connections:await connections()};
 }
 
-export async function descriptionReset(lang){
- const back=lang==='nl'?'← Terug naar lijst':'← Back to list';
+export async function descriptionReset(){
  assert(!reader().querySelector('dialog[open],iframe'),'reader not back in safe view');
- if(!document.querySelector('.list').getClientRects().length)click(back);
+ if(!document.querySelector('.list').getClientRects().length)returnToList();
  await open('garden');
  assert(!reader().querySelector('dialog[open],iframe,.mail-image-in-row'),'previous message details still active');
- click(back);await open('unhinted');
+ returnToList();await open('unhinted');
  assert(!reader().querySelector('dialog[open],iframe'),'reopening retained modal or consent');
  return {connections:await connections(),requests:await requests()};
 }
@@ -209,7 +213,7 @@ export async function headerAfter(){
 
 export async function headerReset(){
  const before={requests:(await requests()).length,connections:await connections()};
- click('← Back to list');await open('header');await pause(250);
+ returnToList();await open('header');await pause(250);
  assert(button('Load remote images')&&!reader().querySelector('img,iframe'),'header consent persisted on reopen');
  const after={requests:(await requests()).length,connections:await connections()};
  assert(after.requests===before.requests&&after.connections===before.connections,'header reopen contacted host');
@@ -257,7 +261,7 @@ export async function contrastTheme(theme){
  return samples;
 }
 export async function contrastPalette(theme='light'){
- if(theme==='light'){click('← Back to list');await open('contrast-palette');}
+ if(theme==='light'){returnToList();await open('contrast-palette');}
  document.documentElement.dataset.theme=theme;
  await pause(0);
  const body=reader().querySelector('.formatted-mail');
@@ -294,7 +298,7 @@ export async function editionReopen(){
  assert(frames.length===2&&frames.every(f=>f.getAttribute('sandbox')===''&&f.referrerPolicy==='no-referrer'&&f.contentDocument===null),'images are not isolated');
  assert(document.documentElement.scrollWidth<=innerWidth,'loaded newsletter overflows');
  const loaded=await requests(),count=await connections();
- click('← Back to list');await open('edition');await pause(250);
+ returnToList();await open('edition');await pause(250);
  assert(button('Load remote images')&&!reader().querySelector('iframe,img'),'consent carried over on reopen');
  assert((await requests()).length===loaded.length&&(await connections())===count,'reopen contacted host');
  return loaded;
@@ -306,7 +310,7 @@ export async function gardenBefore(baseline){
   const unsupported=reader().querySelector('.formatted-mail');
   assert(unsupported?.checkVisibility()&&unsupported.querySelectorAll('.mail-image-placeholder').length===4&&!reader().querySelector('.image-controls'),'image-only fallback missing or offered consent: '+reader().textContent);
   assert(unsupported.querySelector('[aria-label="Inline image is not displayed"]')&&reader().querySelector('.image-source-summary li')?.textContent==='3 images have unsupported sources.'&&!unsupported.textContent.trim(),'unsupported images mislabeled');
-  click('← Back to list');
+  returnToList();
   await open('garden');
  }
  const body=reader().querySelector('.formatted-mail'),controls=reader().querySelector('.image-controls');
@@ -349,7 +353,7 @@ export async function studioBefore(){
 
 export async function studioReset(){
  const loaded=await requests(),count=await connections();
- if(!document.querySelector('.list').getClientRects().length)click('← Back to list');
+ if(!document.querySelector('.list').getClientRects().length)returnToList();
  await open('missing');await pause(250);
  assert(button('Load remote images')&&!reader().querySelector('iframe,img'),'studio consent carried over to next message');
  assert((await requests()).length===loaded.length&&(await connections())===count,'next message contacted observer');
@@ -357,7 +361,7 @@ export async function studioReset(){
 }
 
 export async function gardenMissing(){
- click('← Back to list');await open('missing');
+ returnToList();await open('missing');
  assert(!reader().querySelector('iframe')&&button('Load remote images'),'consent leaked to the HTML-only message');
  return gardenPoint();
 }
@@ -394,8 +398,8 @@ export async function diagnosticsBefore(lang){
  return {rows,counts:formatted.imageRejections,closedByDefault:hidden,connections:0,requests:0};
 }
 
-export async function diagnosticsMissing(lang){
- click(lang==='en'?'← Back to list':'← Terug naar lijst');await open('missing');
+export async function diagnosticsMissing(){
+ returnToList();await open('missing');
  assert(!reader().querySelector('.image-source-summary,iframe,img'),'message diagnostics or consent carried over');
  return gardenPoint();
 }
@@ -416,7 +420,7 @@ export async function imageLoadBefore(index){
   const prefs=document.querySelectorAll('main select');
   set(prefs[0],'en');set(prefs[1],'dark');set(prefs[2],'html');
   await pause(0);click('Instellingen opslaan');await idle();click('Back');
- }else click('← Back to list');
+ }else returnToList();
  await open(`image-load-${index}`);
  const control=button('Load remote images');
  assert(control&&document.getElementById(control.getAttribute('aria-describedby'))?.textContent.includes('IP address'),'missing global privacy notice');
@@ -427,7 +431,7 @@ export async function imageLoadBefore(index){
 }
 
 export async function imageLoadReset(){
- click('← Back to list');await open('image-load-2');await pause(200);
+ returnToList();await open('image-load-2');await pause(200);
  const body=reader().querySelector('.formatted-mail');
  assert(button('Load remote images')&&!body.querySelector('iframe,img')&&body.querySelectorAll('.mail-image-placeholder[role=img]>svg').length===3,'reopening mixed message retained consent');
  return {requests:await requests(),connections:await connections()};
@@ -446,7 +450,7 @@ export async function pictureBefore(expected){
  await openNewsletter('empty');
  const empty=await picturePayload();
  assert(JSON.stringify(empty.imageRejections)==='{"missing":23}'&&!empty.images.length&&!button('Load remote images')&&!reader().querySelector('iframe,img'),'truly empty slots became fetchable');
- click('← Back to list');await open('picture');
+ returnToList();await open('picture');
  const picture=await picturePayload(),control=button('Load remote images');
  control?.click();await pause(250);
  const pre={requests:await requests(),connections:await connections(),empty:empty.imageRejections,slots:picture.images.length,rejections:picture.imageRejections??null};
@@ -469,9 +473,9 @@ export function pictureVisible(count){
 
 export async function pictureReset(){
  const observed=await requests(),count=await connections();
- click('← Back to list');await open('picture');
+ returnToList();await open('picture');
  assert(button('Load remote images')&&!reader().querySelector('img,iframe'),'picture consent persisted on reopen');
- if(!document.querySelector('.list').getClientRects().length)click('← Back to list');
+ if(!document.querySelector('.list').getClientRects().length)returnToList();
  await open('garden');await pause(250);
  assert(button('Load remote images')&&!reader().querySelector('img,iframe'),'picture consent leaked to another message');
  assert((await requests()).length===observed.length&&(await connections())===count,'reopen/switch contacted host');
