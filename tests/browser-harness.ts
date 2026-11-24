@@ -25,6 +25,7 @@ function newsletterPng(){
 mkdirSync('.test-data',{recursive:true,mode:0o700});const dir=mkdtempSync(resolve('.test-data/browser-'));
 const folders=process.argv.includes('--folders');
 const treeStyle=process.argv.includes('--tree-style');
+const markRead=process.argv.includes('--mark-read');
 const replySubjects=process.argv.includes('--reply-subjects');
 const garden=process.argv.includes('--newsletter');
 const full=process.argv.includes('--full-reader');
@@ -65,6 +66,10 @@ for(const label of ['Werk','Privé']){
  else store.putAccount(1,randomUUID(),{label,address:`${user}@example.test`,imap:{host:'mail.invalid',port:993,tls:'implicit',user},smtp:{host:'mail.invalid',port:465,tls:'implicit',user}},{imap:randomBytes(24).toString('hex'),smtp:randomBytes(24).toString('hex')});
 }store.close();
 const app=await buildApp(c);
+if(markRead&&mail){
+ app.post('/__test_reject_seen',async()=>{mail.behavior.store='reject';return {armed:true};});
+ app.get('/__test_seen_writes',async()=>mail.stores);
+}
 // Fault injection only in this loopback harness: finish the real handler, then lose its HTTP reply.
 let dropNextSend=false,sendRequests=0,droppedReplies=0;
 app.post('/__test_drop_send_response',async()=>{dropNextSend=true;return {armed:true};});

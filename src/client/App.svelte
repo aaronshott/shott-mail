@@ -10,7 +10,7 @@
  let logged=false,password='',csrf='',error='',notice='',busy=false,accounts=[],messages=[],drafts=[],filter='all',page=0,hasMore=false,view='inbox',reader=null,editor=null,settings=null,dirty=false;
  let loginName='',role='',identity='',users=[],newLogin='',newPassword='';
  let activeFolder=null,folderIndex=0,folderValidity='',filingNotice='',observation='';
- let explicitAccount=null,folderEpochs={},mobileNav=false,navToggle,lastReadButton,readerPane;
+ let explicitAccount=null,folderEpochs={},mobileNav=false,navToggle,lastReadButton,readerPane,readerRow=null;
  let language='nl',theme='system',readerFormat='plain',preferenceForm,returnView='inbox';
  $: t=translate.bind(null,language);
  $: locale=language==='en'?'en-GB':'nl-NL';
@@ -42,7 +42,7 @@
  }
  async function action(fn){if(busy)return;busy=true;error='';try{await fn();}catch(e){error=e instanceof UiError?e:new UiError('REQUEST_FAILED');}finally{busy=false;}}
  function clearRows(){messages=[];hasMore=false;}
- function enter(next,preserveRows=false){navigation++;reader=null;if(next==='inbox'&&view!=='inbox'&&!preserveRows)clearRows();view=next;}
+ function enter(next,preserveRows=false){navigation++;reader=null;readerRow=null;if(next==='inbox'&&view!=='inbox'&&!preserveRows)clearRows();view=next;}
  async function focusView(stamp=navigation){await tick();if(logged&&stamp===navigation)document.querySelector('.workspace h1')?.focus();}
  function goView(next,preserveRows=false){enter(next,preserveRows);mobileNav=false;return focusView();}
  function toggleMobile(){mobileNav=!mobileNav;}
@@ -193,10 +193,22 @@
   reader=null;
   const loaded=await api(m.source.url);
   if(!current()||!messages.includes(m))return;
-  lastReadButton=button;reader=loaded;mobileNav=false;await tick();
+  lastReadButton=button;reader=loaded;readerRow=m;mobileNav=false;await tick();
   if(current()&&reader===loaded){readerPane.scrollTop=0;document.getElementById('readtitle')?.focus();}
  }));}
- async function closeReader(){const stamp=navigation;reader=null;await tick();if(stamp!==navigation)return;if(lastReadButton?.isConnected)lastReadButton.focus();else await focusView(stamp);}
+ async function markRead(){
+  const row=readerRow;
+  if(!reader||!row?.unread||!messages.includes(row)||row.source.owner!==identity||row.source.session!==csrf)return;
+  await action(()=>inNavigation(async current=>{
+   const result=await api(`${row.source.url}/read`,'POST',{mailbox:row.mailbox});
+   if(result?.unread!==false)throw new UiError('MARK_READ_UNCONFIRMED');
+   if(!current()||!messages.includes(row))return;
+   const updated={...row,unread:false};
+   messages=messages.map(m=>m===row?updated:m);
+   if(readerRow===row)readerRow=updated;
+  }));
+ }
+ async function closeReader(){const stamp=navigation;reader=null;readerRow=null;await tick();if(stamp!==navigation)return;if(lastReadButton?.isConnected)lastReadButton.focus();else await focusView(stamp);}
  function editAccount(a){settings=a?structuredClone(a):{label:'',address:'',imap:emptyEndpoint(993),smtp:emptyEndpoint(465)};settings.imap.password='';settings.smtp.password='';enter('accounts');notice='';}
  async function saveSent(id,data){await action(async()=>{
   const form=settings,session=csrf,stamp=navigation;
@@ -300,7 +312,7 @@
       <button onclick={()=>action(async()=>{reader=null;if(view==='folder')await folderPage(activeFolder,0);else await refresh();})} disabled={busy}>{t('refresh')}</button>
       <p>{t('page',{page:numbers.format(currentPage+1)})}</p>
      </div>
-     {#each messages as m (m)}
+     {#each messages as m (m.source)}
       <button class="mail" onclick={e=>openMail(m,e.currentTarget)} disabled={busy}>
        <span>{#if m.unread}<span aria-label={t('unread')} role="img">●</span> {/if}{m.from}</span>
        <strong>{m.subjectMissing?t('noSubject'):m.subject}</strong>
@@ -315,6 +327,7 @@
      {#if reader}
       <div class="reader-meta"><span class="tag">{reader.accountLabel} · {reader.address}</span>
       <h2 id="readtitle" tabindex="-1">{reader.subjectMissing?t('noSubject'):reader.subject}</h2><p>{reader.from}</p><p class="note">{t('safeView')}</p>
+      <button type="button" aria-disabled={busy||!readerRow?.unread} onclick={markRead}>{t(readerRow?.unread?'markRead':'messageRead')}</button>
       </div>
       {#if readerFormat==='html'&&(reader.formatted||reader.readerIdentity)}
        {#key reader}

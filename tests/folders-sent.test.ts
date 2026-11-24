@@ -7,6 +7,7 @@ import {buildApp,type Config} from '../src/server/app.ts';
 import {Store} from '../src/server/store.ts';
 import {startMailFixture} from './mail-fixture.ts';
 import type {Folder} from '../src/server/folders.ts';
+import {imap} from '../src/server/mail.ts';
 
 async function withFixture(run:(ctx:Awaited<ReturnType<typeof setup>>)=>Promise<void>){
  const f=await setup();try{await run(f);}finally{await f.close();}
@@ -32,6 +33,62 @@ async function setup(){
  const restart=async(interrupt?:()=>void)=>{await app.close();interrupt?.();app=await buildApp(c);};
  return {mail,c,admin,session,account,folderPath,folders,policy,draft,send,check,restart,close:async()=>{await app.close();await mail.close();rmSync(dir,{recursive:true,force:true});}};
 }
+
+test('MAILCLIENT-34: explicit Seen targets one owned UID and survives a fresh IMAP connection',()=>withFixture(async f=>{
+ const {mail,admin,account}=f,work='work@example.test',sent='Shared/Verzonden';
+ mail.seedSent();mail.seedFlags(work,sent,1,['\\Flagged','$Synthetic']);
+ const sentFolder=(await f.folders()).find(x=>x.path===sent)!;
+ const box=`${f.folderPath}/${sentFolder.id}/messages`,inbox=`/api/inbox?account=${account}`;
+ const row=async(path:string)=>(await admin(path)).json().messages[0];
+ const target=await row(box),sameUid=await row(inbox);
+ assert.deepEqual([target.uid,target.validity],[sameUid.uid,sameUid.validity]);
+ const detail=`${box}/${target.validity}/${target.uid}`;
+ assert.equal((await admin(detail)).statusCode,200);
+ assert.equal((await row(box)).unread,true);
+ assert.equal(mail.stores.length,0);
+ const mark=(url:string,mailbox:string)=>admin(`${url}/read`,'POST',{mailbox});
+ const written=await mark(detail,target.mailbox);assert.equal(written.statusCode,200,written.body);
+ assert.deepEqual(written.json(),{unread:false});
+ assert.deepEqual(mail.stores,[{user:work,path:sent,command:'STORE 1 +FLAGS.SILENT (\\Seen)'}]);
+ assert.equal((await row(box)).unread,false);assert.equal((await row(inbox)).unread,true);
+ const client=await imap(mail.mailbox('work').imap,f.c);
+ try{
+  await client.connect();
+  if(client.namespace)client.namespace={...client.namespace,prefix:''};
+  await client.mailboxOpen(sent,{readOnly:true});
+  const actual=await client.fetchOne('1',{flags:true},{uid:true});
+  assert.deepEqual(actual&&actual.flags,new Set(['\\Flagged','$Synthetic','\\Seen']));
+ }finally{client.close();}
+ const privateAccount=(await admin('/api/accounts','POST',mail.mailbox('private'))).json().id;
+ const privateInbox=`/api/inbox?account=${privateAccount}`,privateRow=await row(privateInbox);
+ const inboxDetail=`/api/messages/${account}/${sameUid.validity}/${sameUid.uid}`;
+ assert.equal((await mark(inboxDetail,privateRow.mailbox)).statusCode,409);
+ const markedInbox=await mark(inboxDetail,sameUid.mailbox);assert.equal(markedInbox.statusCode,200,markedInbox.body);
+ assert.equal((await mark(inboxDetail,sameUid.mailbox)).statusCode,200); // idempotent
+ assert.equal((await row(inbox)).unread,false);assert.equal((await row(privateInbox)).unread,true);
+}));
+
+test('MAILCLIENT-34: stale identity, missing UID and unconfirmed Seen cannot succeed',()=>withFixture(async f=>{
+ const {mail,admin}=f,nested=(await f.folders()).find(x=>x.path==='INBOX/Projects/旅行')!;
+ const box=`${f.folderPath}/${nested.id}/messages`;
+ const {uid,validity,mailbox}=(await admin(box)).json().messages[0];
+ const mark=(v:string,u:number)=>admin(`${box}/${v}/${u}/read`,'POST',{mailbox});
+ mail.behavior.validity=55;
+ assert.equal((await mark(validity,uid)).statusCode,409);assert.equal(mail.stores.length,0);
+ const url=`${box}/55/${uid}/read`,beforeAuth=mail.metrics().imapAuth;
+ const password=randomBytes(24).toString('hex');
+ assert.equal((await admin('/api/admin/users','POST',{login:'other',password})).statusCode,201);
+ const other=await f.session('other',password);
+ assert.equal((await other(url,'POST',{mailbox})).statusCode,400);
+ assert.equal(mail.metrics().imapAuth,beforeAuth);
+ assert.equal((await mark('55',999)).statusCode,404);
+ for(const behavior of ['reject','noop','readonly'] as const){
+  mail.behavior.store=behavior;
+  const failed=await mark('55',uid);assert.equal(failed.statusCode,502,`${behavior}: ${failed.body}`);
+  assert.equal(failed.json().error,'MARK_READ_UNCONFIRMED');
+  assert.equal((await admin(box)).json().messages[0].unread,true);
+ }
+}));
 
 test('LIST, owned absolute mailbox identity, UIDVALIDITY paging and sanitized UID read',()=>withFixture(async f=>{
  const folders=await f.folders(),nested=folders.find(x=>x.path==='INBOX/Projects/旅行')!,parent=folders.find(x=>x.path==='INBOX/Projects')!;

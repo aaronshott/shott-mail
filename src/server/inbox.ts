@@ -1,6 +1,6 @@
 import {simpleParser} from 'mailparser';
 import {z} from 'zod';
-import type {FastifyInstance} from 'fastify';
+import type {FastifyInstance,FastifyReply,FastifyRequest} from 'fastify';
 import {Store} from './store.ts';
 import {imap,type MailPolicy} from './mail.ts';
 import {formatBody} from './format-body.ts';
@@ -10,7 +10,8 @@ import type {ImapFlow,FetchMessageObject,MailboxObject} from 'imapflow';
 import {readerDocument,readerDocumentRoutes} from './reader-document.ts';
 const validitySchema=z.string().regex(/^\d{1,20}$/);
 const pageSchema=z.coerce.number().int().min(0).max(100000);
-const summary=(item:FetchMessageObject,a:MailAccount,box:MailboxObject)=>({accountId:a.id,accountLabel:a.label,address:a.address,uid:item.uid,validity:String(box.uidValidity),subject:item.envelope?.subject??'',subjectMissing:item.envelope?.subject==null,from:item.envelope?.from?.map(v=>v.name||v.address).join(', ')??'',date:item.envelope?.date?new Date(item.envelope.date).toISOString():'',unread:!item.flags?.has('\\Seen')});
+type ReadParams={account:string;folder?:string;validity:string;uid:string};
+const summary=(item:FetchMessageObject,a:MailAccount,box:MailboxObject)=>({accountId:a.id,accountLabel:a.label,address:a.address,mailbox:mailboxIdentity(a),uid:item.uid,validity:String(box.uidValidity),subject:item.envelope?.subject??'',subjectMissing:item.envelope?.subject==null,from:item.envelope?.from?.map(v=>v.name||v.address).join(', ')??'',date:item.envelope?.date?new Date(item.envelope.date).toISOString():'',unread:!item.flags?.has('\\Seen')});
 export async function parseMessage(source:Buffer,appHostname=''){
  const mail=await simpleParser(source,{skipHtmlToText:false,skipTextToHtml:true,skipImageLinks:true});
  const formatted=mail.html?formatBody(mail.html,appHostname):null;
@@ -83,6 +84,32 @@ export function inboxRoutes(app:FastifyInstance,store:Store,c:MailPolicy & {orig
    return await replyWithMessage(client,a,uid,reply,c,appHostname,undefined,validity);
   }finally{client?.close();}
  });
+ async function markRead(req:FastifyRequest<{Params:ReadParams}>,reply:FastifyReply){
+  const owner=req.principal!.userId,a=accountFor(owner,req.params.account);
+  const id=folderId.optional().parse(req.params.folder),validity=validitySchema.parse(req.params.validity);
+  const uid=z.string().regex(/^[1-9]\d{0,9}$/).refine(v=>Number(v)<=4294967295).parse(req.params.uid);
+  const {mailbox}=z.object({mailbox:folderId}).strict().parse(req.body);
+  if(mailboxIdentity(a)!==mailbox)return reply.code(409).send({error:'MESSAGE_IDENTITY_CHANGED'});
+  const unconfirmed=()=>reply.code(502).send({error:'MARK_READ_UNCONFIRMED'});
+  try{return await useMailbox(a,store.credentials(owner,a.id).imap,c,async client=>{
+   const path=id?(await discover(client,a)).find(f=>f.id===id&&f.selectable)?.path:'INBOX';
+   if(!path)return reply.code(404).send({error:'FOLDER_UNAVAILABLE'});
+   const box=await client.mailboxOpen(path,{readOnly:false});
+   if(String(box.uidValidity)!==validity)return reply.code(409).send({error:'MESSAGE_IDENTITY_CHANGED'});
+   const fetchFlags=()=>client.fetchOne(uid,{flags:true},{uid:true});
+   const before=await fetchFlags();
+   if(!before)return reply.code(404).send({error:'MESSAGE_GONE'});
+   if(before.uid!==Number(uid)||!before.flags)return unconfirmed();
+   if(before.flags.has('\\Seen'))return {unread:false};
+   if(box.readOnly||!await client.messageFlagsAdd(uid,['\\Seen'],{uid:true,silent:true}))return unconfirmed();
+   // A tagged OK for UID STORE is not proof that the UID was updated.
+   const after=await fetchFlags();
+   if(!after||after.uid!==Number(uid)||!after.flags?.has('\\Seen'))return unconfirmed();
+   return {unread:false};
+  });}catch{return unconfirmed();}
+ }
+ app.post<{Params:ReadParams}>('/api/messages/:account/:validity/:uid/read',markRead);
+ app.post<{Params:ReadParams}>('/api/accounts/:account/folders/:folder/messages/:validity/:uid/read',markRead);
  readerDocumentRoutes(app,store,async(owner,identity)=>{
   const a=accountFor(owner,identity.account);
   if(mailboxIdentity(a)!==identity.mailbox)return {status:409};

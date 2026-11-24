@@ -20,7 +20,9 @@ export async function startMailFixture(dir:string,folders=false,nested='INBOX/Pr
   [nested,[1,2].map(n=>`From: sender@example.test\r\nSubject: Nested ${n} for ${user}\r\nContent-Type: text/html\r\n\r\n<p>Nested body ${n}</p><script>alert(1)</script><img src="https://example.test/no">\r\n`)],
   ['Shared/<b>literal</b>',[]]
  ])]));
- const behavior={sentFlags:1,validity:44,provider:'none' as 'none'|'auto'|'delay',append:'ok' as 'ok'|'reject'|'lost'|'drop',smtpLost:false};
+ const flags=new Map<string,Set<string>>(),stores:{user:string;path:string;command:string}[]=[];
+ const flagKey=(user:string,path:string,uid:number)=>JSON.stringify([user,path,uid]);
+ const behavior={sentFlags:1,validity:44,provider:'none' as 'none'|'auto'|'delay',append:'ok' as 'ok'|'reject'|'lost'|'drop',smtpLost:false,store:'ok' as 'ok'|'reject'|'noop'|'readonly'};
  const submitted:string[]=[],appended:string[]=[],delayed:{mail:string[];raw:string}[]=[];
  const sockets=new Set<TLSSocket>();let deliveries=0,imapAuth=0,smtpAuth=0,appendAttempts=0;
  function readLines(socket:TLSSocket,handler:(line:string)=>void){
@@ -38,7 +40,7 @@ export async function startMailFixture(dir:string,folders=false,nested='INBOX/Pr
  }
  const plain=(data:string)=>{const [,user,pass]=Buffer.from(data,'base64').toString().split('\0');return passwords.get(user)===pass&&passwords.has(user)?user:'';};
  const imap=createServer(options,socket=>{
-  const cap='IMAP4rev1 AUTH=PLAIN SASL-IR'+(folders?' SPECIAL-USE NAMESPACE UIDPLUS':'');let user='',authTag='',selected='INBOX';
+  const cap='IMAP4rev1 AUTH=PLAIN SASL-IR'+(folders?' SPECIAL-USE NAMESPACE UIDPLUS':'');let user='',authTag='',selected='INBOX',readOnly=true;
   const write=(line:string)=>socket.write(line+'\r\n');
   const finishAuth=(tag:string,data:string)=>{user=plain(data);if(user)imapAuth++;write(`${tag} ${user?'OK authenticated':'NO authentication failed'}`);};
   write(`* OK [CAPABILITY ${cap}] Synthetic IMAP ready`);
@@ -66,9 +68,9 @@ export async function startMailFixture(dir:string,folders=false,nested='INBOX/Pr
    if(op==='SELECT'||op==='EXAMINE'){
     const path=wirePath(),target=boxes.get(path);
     if(!target){write(`${tag} NO unknown mailbox`);return;}
-    selected=path;
-    for(const status of ['FLAGS (\\Seen)',`${target.length} EXISTS`,'0 RECENT',`OK [UIDVALIDITY ${path===nested?behavior.validity:33}] stable`,`OK [UIDNEXT ${target.length+1}] next`])write(`* ${status}`);
-    write(`${tag} OK [READ-ONLY] selected`);return;
+    selected=path;readOnly=op==='EXAMINE'||behavior.store==='readonly';
+    for(const status of ['FLAGS (\\Seen \\Flagged $Synthetic)','OK [PERMANENTFLAGS (\\Seen \\Flagged \\*)] flags',`${target.length} EXISTS`,'0 RECENT',`OK [UIDVALIDITY ${path===nested?behavior.validity:33}] stable`,`OK [UIDNEXT ${target.length+1}] next`])write(`* ${status}`);
+    write(`${tag} OK [READ-${readOnly?'ONLY':'WRITE'}] selected`);return;
    }
    if(folders&&op==='APPEND'){
     appendAttempts++;
@@ -84,12 +86,23 @@ export async function startMailFixture(dir:string,folders=false,nested='INBOX/Pr
     const id=/<[^>]+>/.exec(line)?.[0];
     write(`* SEARCH ${mail.flatMap((raw,i)=>id&&raw.includes(id)?[i+1]:[]).join(' ')}`.trimEnd());ok();return;
    }
+   if(op==='UID'&&args[0]==='STORE'){
+    stores.push({user,path:selected,command:args.join(' ')});
+    const uid=Number(args[1]);
+    if(readOnly||behavior.store==='reject'){write(`${tag} NO store rejected`);return;}
+    if(!/^STORE \d+ \+FLAGS(?:\.SILENT)? \(\\Seen\)$/.test(args.join(' '))){write(`${tag} BAD expected additive Seen`);return;}
+    if(mail[uid-1]&&behavior.store!=='noop'){
+     const key=flagKey(user,selected,uid),values=flags.get(key)??new Set<string>();values.add('\\Seen');flags.set(key,values);
+     if(args[2]==='+FLAGS')write(`* ${uid} FETCH (UID ${uid} FLAGS (${[...values].join(' ')}))`);
+    }
+    ok();return;
+   }
    const fetch=op==='FETCH'?args:op==='UID'&&args[0]?.toUpperCase()==='FETCH'?args.slice(1):null;
    if(fetch){
     const indices=fetch[0].split(',').flatMap(range=>{const [start,end=start]=range.split(':').map(s=>s==='*'?mail.length:Number(s));return Array.from({length:Math.max(0,Math.min(end,mail.length)-start+1)},(_,i)=>start+i);}),query=fetch.slice(1).join(' ').toUpperCase();
     for(const i of indices){
      const source=mail[i-1],size=Buffer.byteLength(source),subject=/^Subject: (.*)\r$/m.exec(source)?.[1];
-     let result=`* ${i} FETCH (UID ${i} RFC822.SIZE ${size} FLAGS ()`;
+     let result=`* ${i} FETCH (UID ${i} RFC822.SIZE ${size} FLAGS (${[...flags.get(flagKey(user,selected,i))??[]].join(' ')})`;
      const id=/^Message-ID: (.*)\r$/mi.exec(source)?.[1];
      if(query.includes('ENVELOPE'))result+=` ENVELOPE ("Fri, 20 Nov 2026 12:00:00 +0000" ${subject===undefined?'NIL':JSON.stringify(subject)} ((NIL NIL "sender" "example.test")) NIL NIL NIL NIL NIL NIL ${id?JSON.stringify(id):'NIL'})`;
      if(query.includes('BODY.PEEK[]')||query.includes('BODY[]'))result+=` BODY[]<0> {${size}}\r\n${source}`;
@@ -126,6 +139,7 @@ export async function startMailFixture(dir:string,folders=false,nested='INBOX/Pr
  const listen=async(server:typeof imap)=>{const ready=once(server,'listening');server.listen(0,'127.0.0.1');await ready;return (server.address() as {port:number}).port;};
  const imapPort=await listen(imap),smtpPort=await listen(smtp);
  return {ca,allowedMail:[`127.0.0.1:${imapPort}`,`127.0.0.1:${smtpPort}`],metrics:()=>({deliveries,imapAuth,smtpAuth}),
+  stores,seedFlags:(user:string,path:string,uid:number,values:string[])=>flags.set(flagKey(user,path,uid),new Set(values)),
   behavior,submitted,appended,appendCount:()=>appendAttempts,releaseProvider:()=>{for(const {mail,raw} of delayed.splice(0))mail.push(raw);},
   seedSent:()=>paths.get('work@example.test')!.get(sent)!.push('From: work@example.test\r\nSubject: QA17 Sent row\r\n\r\nSent context only\r\n'),
   seedReplySubjects:()=>paths.get('work@example.test')!.set('INBOX',[undefined,'(Geen onderwerp)','(No subject)','Quarterly report'].map((subject,i)=>`From: sender@example.test\r\n${subject===undefined?'':`Subject: ${subject}\r\n`}\r\nReply fixture ${i}\r\n`)),
