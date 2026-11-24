@@ -10,7 +10,7 @@ import {runFullReader} from './browser-full-reader.mjs';
 import {runImageDescriptions} from './browser-image-descriptions.mjs';
 import {editionImages,picturePaths} from './newsletter-fixture.ts';
 const chrome=process.argv[2];if(!chrome)throw Error('Pass an absolute Chrome/Chromium path');
-const workflows=process.argv.length>3?process.argv.slice(3):['folders','context','composer','b1','users','settings','reply-nl','reply-en','reader-nl','reader-en','diagnostics-nl','diagnostics-en','newsletter','edition','studio','picture','contrast','header-light','header-dark','tree-light','tree-dark','full-reader','preconsent-light','preconsent-dark','unhinted-light','unhinted-dark','image-descriptions-en','image-descriptions-nl'];
+const workflows=process.argv.length>3?process.argv.slice(3):['folders','context','composer','b1','users','settings','reply-nl','reply-en','reader-nl','reader-en','diagnostics-nl','diagnostics-en','newsletter','edition','studio','picture','contrast','header-light','header-dark','tree-light','tree-dark','full-reader','preconsent-light','preconsent-dark','unhinted-light','unhinted-dark','image-descriptions-en','image-descriptions-nl','icon-only-light','icon-only-dark'];
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 await mkdir('.test-data',{recursive:true,mode:0o700});
 const profile=await mkdtemp(resolve('.test-data/browser-chrome-'));
@@ -30,7 +30,8 @@ try{
   const header=kind==='header-light'?'light':kind==='header-dark'?'dark':null;
   const unhinted=kind.startsWith('unhinted-');
   const descriptions=kind.startsWith('image-descriptions-')?kind.slice(-2):null;
-  const preconsent=descriptions?(descriptions==='nl'?'dark':'light'):unhinted?kind.slice(9):kind.startsWith('preconsent-')?kind.slice(11):null;
+  const iconOnly=kind.startsWith('icon-only-');
+  const preconsent=iconOnly?kind.slice(10):descriptions?(descriptions==='nl'?'dark':'light'):unhinted?kind.slice(9):kind.startsWith('preconsent-')?kind.slice(11):null;
   const full=kind==='full-reader',studio=kind==='studio',edition=kind==='edition',picture=kind==='picture',garden=kind==='newsletter'||kind==='contrast'||edition||studio||picture||header||preconsent,needsImage=readerLocale||garden||diagnosticsLocale||full;
   const treeTheme=kind==='tree-light'?'light':kind==='tree-dark'?'dark':null;
   const h=start(process.execPath,['tests/browser-harness.ts',...(full?['--full-reader']:garden?['--newsletter']:diagnosticsLocale?['--reader','--diagnostics']:readerLocale?['--reader']:replyLocale?['--reply-subjects']:kind==='context'?['--folders','--context']:treeTheme?['--folders','--tree-style']:kind==='settings'?['--folders']:['folders','composer'].includes(kind)?[`--${kind}`]:[])]);
@@ -59,7 +60,7 @@ try{
     }
     if(method==='Network.requestWillBeSent'){
      const url=new URL(params.request.url);
-     if(descriptions&&['https:','http:'].includes(url.protocol))traffic.push(url.href);
+     if((descriptions||iconOnly)&&['https:','http:'].includes(url.protocol))traffic.push(url.href);
      if(preconsent&&['https:','http:'].includes(url.protocol)&&url.origin!==origin)external.push(url.href);
      if([imageOrigin,imageOrigin.replace('images.','cdn.')].includes(url.origin))observed.push(url.pathname);
     }
@@ -101,7 +102,44 @@ try{
      if(mobile){await call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point]});await call('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});}
      else for(const type of ['mousePressed','mouseReleased'])await call('Input.dispatchMouseEvent',{type,...point,button:'left',clickCount:1});
     };
-    if(descriptions){
+    if(iconOnly){
+     const state=record.before=await run('iconOnlyCrop',JSON.stringify(preconsent));
+     await shot(kind,true);
+     record.externalRequests=external;
+     if(external.length||state.connections||state.requests.length||imageFrames.size||state.active||!state.controls)throw Error('Safe HTML consent or network changed');
+     if(state.slots.some(s=>s.text||s.title)||/Externe afbeelding geblokkeerd|(?:Repeated|Unresolved|Unsupported) observation/.test(state.bodyText))throw Error('Inline placeholder text or tooltip still present');
+     if(state.caption!=='Sender caption remains'||!['Narrow cell text','Wide cell text'].every(s=>state.bodyText.includes(s))||state.overflow)throw Error('Sender content or layout changed');
+     const names=[...Array(3).fill('Externe afbeelding geblokkeerd — Repeated observation'),'Ingesloten afbeelding wordt niet weergegeven — Unresolved observation','Unsupported observation','Afbeelding niet beschikbaar'];
+     if(JSON.stringify(state.slots.map(s=>s.name))!==JSON.stringify(names)||state.slots.some(s=>s.svg!==1||!s.visible||s.focusable||s.width<=0||s.height<=0||s.width>16.5||s.height>16.5||s.width>(s.cell??16)+.5))throw Error('One compact, named icon per slot expected');
+     const {root}=await call('DOM.getDocument');
+     const {nodeId}=await call('DOM.querySelector',{nodeId:root.nodeId,selector:'.formatted-mail'});
+     const {nodes}=await call('Accessibility.queryAXTree',{nodeId,role:'image'});
+     record.names=nodes.filter(n=>!n.ignored).map(n=>n.name?.value);
+     if(JSON.stringify(record.names)!==JSON.stringify(names))throw Error('Image names missing in the browser accessibility tree');
+     // Keep the tile and layout in place, hide just the SVG, then compare real raster captures.
+     record.painted=[];
+     for(let i=0;i<names.length;i++){
+      const icon=`document.querySelectorAll('.formatted-mail .mail-image-placeholder > svg')[${i}]`;
+      const clip=await evaluate(`(()=>{const r=${icon}.getBoundingClientRect();if(r.top<0||r.bottom>innerHeight||r.left<0||r.right>innerWidth)throw Error('Icon outside screenshot viewport');return {x:r.left+scrollX,y:r.top+scrollY,width:r.width,height:r.height,scale:1};})()`);
+      const capture=()=>call('Page.captureScreenshot',{format:'png',fromSurface:true,captureBeyondViewport:true,clip}).then(x=>x.data);
+      const shown=await capture();
+      await evaluate(`${icon}.style.visibility='hidden'`);
+      const hidden=await capture();
+      await evaluate(`${icon}.style.removeProperty('visibility')`);
+      record.painted.push(shown!==hidden);
+     }
+     if(record.painted.some(p=>!p))throw Error('An SVG did not change the rendered pixels');
+     const trigger='.image-descriptions-trigger',modal='.image-descriptions-dialog';
+     const point=sel=>evaluate(`(()=>{const b=document.querySelector(${JSON.stringify(sel)});b.scrollIntoView({block:'center'});const r=b.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;if(!b.contains(document.elementFromPoint(x,y)))throw Error('Control not hit-testable');return {x,y};})()`);
+     const start=traffic.length;
+     await gesture(await point(trigger));
+     record.descriptions=await evaluate(`([...document.querySelectorAll('${modal}:modal li')].map(li=>li.textContent))`);
+     if(JSON.stringify(record.descriptions)!==JSON.stringify(names.slice(0,-1)))throw Error('Description panel lost ordered alternatives, including repeated slots');
+     await delay(350);await shot(kind+'-descriptions',true);
+     await gesture(await point(modal+' button'));
+     if(!await evaluate(`document.activeElement.matches('${trigger}')&&!document.querySelector('${modal}:modal')`)||traffic.length!==start||external.length||imageFrames.size)throw Error('Description access changed focus, consent or network');
+     record.result={passed:true};
+    }else if(descriptions){
      record.before=await run('unhintedCrop',[preconsent,descriptions].map(x=>JSON.stringify(x)).join(','));
      record.result=await runImageDescriptions({call,evaluate,poll,run,gesture,imageFrames,external,traffic,mobile,shot,locale:descriptions,before:record.before});
     }else if(unhinted){
@@ -111,16 +149,16 @@ try{
      record.names=nodes.filter(n=>n.role?.value==='image').map(n=>n.name?.value);
      record.externalRequests=external;
      if(external.length||g.connections||g.requests.length||imageFrames.size)throw Error('External resource activity before consent');
-     if(g.geometry.length!==9||g.geometry.some(r=>Math.abs(r.height-r.withoutLabel)>.5||!r.sameRow||r.lines!==1||r.slotWidth>r.cell+.5)||g.overflow)throw Error('Image notice affected shared row geometry');
+     if(g.geometry.length!==9||g.geometry.some(r=>Math.abs(r.height-r.withoutLabel)>.5||!r.sameRow||r.text||r.iconCount!==1||r.slotWidth>Math.min(16,r.cell)+.5)||g.overflow)throw Error('Image icon affected shared row geometry');
      if([0,1,2,3].some((i)=>Math.abs(g.geometry[i].cell-[24,9,34,52][i])>2)||Math.abs(g.geometry[4].cell/g.width-.08)>.01||
-      g.geometry[1].altWidth!==0||g.geometry[5].cell<.45*g.width)throw Error('Unexpected cell widths or clipping');
+      g.geometry[1].slotWidth<8||g.geometry[5].cell<.45*g.width)throw Error('Unexpected cell widths or clipping');
      if(g.geometry.some((r,i)=>i!==5&&i!==8&&(r.bg!=='rgb(24, 38, 58)'||r.fg!=='rgb(245, 249, 255)'))||g.geometry[5].bg!=='rgba(0, 0, 0, 0)'||g.geometry[5].backgroundImage!=='none')throw Error('Unexpected sender palette or stylesheet applied');
      if(!g.grid.aligned||g.grid.role||g.grid.caption!=='Instrument readings'||g.grid.scope.join()!=='col,row'||g.grid.border!=='1px'||g.grid.aligns[1]!=='right'||
       g.grid.tracks.some((w,i)=>Math.abs(w/g.grid.width-[.48,.29,.23][i])>.02))throw Error('Data grid changed');
      if(record.names.filter(n=>n.startsWith('Remote image blocked — Observatory symbol')).length!==8||!record.names.some(n=>n.endsWith('Parent inline CSS'))||
       !record.names.some(n=>n.includes('Unavailable inline symbol'))||!g.reasons.includes('Relative source: 1')||!g.reasons.includes('Embedded and not displayed: 1')||
-      g.standalone.length!==3||g.standalone.some(([text,visible,position])=>!text||!visible||position==='absolute')||
-      !g.geometry[6].alt.includes('Wide illustration')||g.geometry[6].altWidth<100||g.geometry[6].altScrollWidth<=0)throw Error('Meaningful alternative or diagnostic missing');
+      g.standalone.length!==3||g.standalone.some(([name,visible,position,text,icons])=>!name||!visible||position==='absolute'||text||icons!==1)||
+      !g.geometry[6].alt?.includes('Wide illustration'))throw Error('Meaningful alternative or diagnostic missing');
      record.result={passed:true};
     }else if(preconsent){
      const g=record.before=await run('preconsentCrop',JSON.stringify(preconsent));

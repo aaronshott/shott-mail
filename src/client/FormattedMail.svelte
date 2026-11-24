@@ -19,6 +19,24 @@
  };
  const sourceTotal=$derived(body?.imageRejections?reasons.reduce((sum,reason)=>sum+count(reason),0):unsupportedSources);
  const placeholders=[];
+ const smallImageHints=new WeakSet();
+ function blockedImageIcon(){
+  const svgNS='http://www.w3.org/2000/svg';
+  const svg=document.createElementNS(svgNS,'svg');
+  svg.setAttribute('viewBox','0 0 20 20');
+  svg.setAttribute('aria-hidden','true');
+  svg.setAttribute('focusable','false');
+  // Fixed app geometry, not sender SVG. Gaps keep the slash distinct.
+  const shape=document.createElementNS(svgNS,'path');
+  shape.setAttribute('d','M3 7v9h9m5-3V4H8M4 14l3-3 2 2m3-4 1-1 3 3M2 2l16 16');
+  shape.setAttribute('fill','none');
+  shape.setAttribute('stroke','currentColor');
+  shape.setAttribute('stroke-width','1.8');
+  shape.setAttribute('stroke-linecap','round');
+  shape.setAttribute('stroke-linejoin','round');
+  svg.append(shape);
+  return svg;
+ }
  const hasText=el=>[...el.childNodes].some(n=>n.nodeType===Node.TEXT_NODE&&n.textContent.trim());
  const onlyChild=(el,test)=>!hasText(el)&&el.children.length===1&&test(el.firstElementChild);
  function onlyImage(el){
@@ -35,7 +53,7 @@
   const simple=rows.length&&!table.caption&&!table.tHead&&!table.tFoot&&rows.every(row=>
    row.cells.length&&[...row.cells].every(c=>c.localName==='td'&&c.colSpan===1&&c.rowSpan===1));
   const cells=rows.length===1?[...rows[0].cells]:[];
-  const leadingIcon=simple&&cells.length>=2&&onlyImage(cells[0])?.classList.contains('mail-image-glyph')&&
+  const leadingIcon=simple&&cells.length>=2&&smallImageHints.has(onlyImage(cells[0]))&&
    cells.slice(1).some(hasLiveCellText);
   // border=0 alone is not evidence of layout. Only style structural wrappers
   // and icon/label rows; do not change the accessibility role of inferred tables.
@@ -49,16 +67,9 @@
    for(const cell of rowCells){
     const slot=cell.rowSpan===1&&onlyImage(cell);
     if(!slot)continue;
-    // A notice beside live text isn't row content. Let the actual cell box
-    // constrain it, regardless of hints or the localized notice's length.
+    // A marker beside live text must not drive the shared row size.
     cell.classList.add('mail-image-cell');
     slot.classList.add('mail-image-in-row');
-    slot.setAttribute('role','img');
-    slot.setAttribute('aria-label',slot.title);
-    if(!slot.classList.contains('mail-image-glyph')){
-     const detail=document.createElement('span');detail.className='mail-image-alt';
-     detail.textContent=slot.textContent;slot.replaceChildren(detail);
-    }
    }
   }
  }
@@ -86,7 +97,6 @@
      if(isInline)embedded++;
      if(generic){
       if(index!==null)rejectedAtRender++;else unsupported++;
-      if(!alt.trim())continue;
      }
      const width=boundedInteger(node.getAttribute('data-image-width'),1200);
      const height=boundedInteger(node.getAttribute('data-image-height'),800);
@@ -95,15 +105,12 @@
      if(canLoad){
       label=t('remoteImageBlocked');placeholders.push({slot,url,alt,width,height});
      }else if(!generic)label=t(isInline?'inlineImageUnavailable':'imageLimitReached');
-     const name=label?(alt?`${label} — ${alt}`:label):alt;
-     // Keep message order and the exact displayed alternative, independent of
-     // clipping, viewport width, or whether a skipped source can be loaded.
+     const name=label?(alt?`${label} — ${alt}`:label):(alt.trim()||t('imageUnavailable'));
+     // The name and ordered description survive independently of the icon.
      if(alt.trim())alternatives.push({name,loadable:!!canLoad});
-     slot.title=name;
-     if(width&&Number(width)<=32&&(!height||Number(height)<=32)){
-      slot.classList.add('mail-image-glyph');
-      slot.setAttribute('role','img');slot.setAttribute('aria-label',name);
-     }else slot.textContent=name;
+     if(width&&Number(width)<=32&&(!height||Number(height)<=32))smallImageHints.add(slot);
+     slot.setAttribute('role','img');slot.setAttribute('aria-label',name);
+     slot.append(blockedImageIcon());
     }else if(safeFormattingTags.has(tag)){
      const el=document.createElement(tag);
      let padding=inheritedPadding;
@@ -136,7 +143,7 @@
   limited=overBudget;
   inline=embedded;
   rendererRejected=rejectedAtRender;
-  usable=!!target.textContent.trim()||!!target.querySelector('.mail-image-glyph');
+  usable=!!target.textContent.trim()||!!target.querySelector('.mail-image-placeholder');
   const cleanup=protectReaderContrast(target);
   return ()=>{active=false;cleanup();};
  });
@@ -206,7 +213,7 @@
    // The sandbox is opaque: use native image alt fallback rather than treating frame load as image success.
    frame.srcdoc=imageFrameDocument(url,alt||t('remoteImageUnavailable'));
    if(slot.classList.contains('mail-image-in-row'))slot.closest('td').classList.remove('mail-image-cell');
-   for(const attr of ['role','aria-label','title'])slot.removeAttribute(attr);
+   for(const attr of ['role','aria-label'])slot.removeAttribute(attr);
    slot.className='mail-image-frame';slot.replaceChildren(frame);
    if(width){
     if(height)slot.style.maxWidth=`min(100%, ${width}px)`;

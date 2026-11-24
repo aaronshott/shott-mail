@@ -29,7 +29,7 @@ export async function runImageDescriptions({call,evaluate,poll,run,gesture,image
   assert.ok(await focused(`${modal} button`),'initial focus did not enter dialog');
  };
  const narrow=before.geometry[1];
- assert.ok(narrow.cell>=8&&narrow.cell<=11&&narrow.altWidth===0,'9px reproduction did not clip visible text');
+ assert.ok(narrow.cell>=8&&narrow.cell<=11&&narrow.text===''&&narrow.iconCount===1,'9px reproduction is not icon-only');
  assert.equal(before.geometry.length,9);
  assert.ok(before.geometry.every(r=>Math.abs(r.height-r.withoutLabel)<=.5));
  assert.deepEqual({connections:before.connections,requests:before.requests,external,frames:imageFrames.size},{connections:0,requests:[],external:[],frames:0});
@@ -49,7 +49,7 @@ export async function runImageDescriptions({call,evaluate,poll,run,gesture,image
  const labelForImage=nl?'Externe afbeelding geblokkeerd':'Remote image blocked';
  const narrowText=`${labelForImage} — ${unhintedAlt} <b>blue & gold</b> Parent inline CSS`;
  assert.equal(detail.items[1],narrowText);
- assert.deepEqual(detail.items,await evaluate("[...document.querySelectorAll('.formatted-mail .mail-image-placeholder')].map(p=>p.title)"));
+ assert.deepEqual(detail.items,await evaluate("[...document.querySelectorAll('.formatted-mail .mail-image-placeholder')].map(p=>p.getAttribute('aria-label'))"));
  assert.equal(detail.items.length,12);
  assert.deepEqual({title:detail.title,close:detail.close,markup:detail.markup,visible:detail.visible,fits:detail.fits},{title,close,markup:0,visible:true,fits:true});
  // Let Chromium's transient tap highlight clear before capturing the dialog.

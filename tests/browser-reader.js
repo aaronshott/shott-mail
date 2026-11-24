@@ -135,6 +135,23 @@ export async function preconsentCrop(theme){
   overflow:body.scrollWidth>body.clientWidth||document.documentElement.scrollWidth>innerWidth,requests:await requests(),connections:await connections()};
 }
 
+export async function iconOnlyCrop(theme){
+ await openNewsletter('icons',false,'nl');
+ document.documentElement.dataset.theme=theme;
+ const body=reader().querySelector('.formatted-mail');
+ body.scrollIntoView({block:'center'});await pause(300);
+ const slots=[...body.querySelectorAll('.mail-image-placeholder')].map(p=>{
+  const {width,height}=p.getBoundingClientRect(),cell=p.closest('td');
+  return {name:p.getAttribute('aria-label'),text:p.innerText,title:p.title,width,height,cell:cell?.clientWidth,
+   svg:p.querySelectorAll(':scope > svg[aria-hidden=true] > path').length,focusable:p.tabIndex>=0,visible:p.checkVisibility()};
+ });
+ return {slots,bodyText:body.innerText,caption:body.querySelector('caption')?.textContent,
+  active:body.querySelectorAll('a,button,img,iframe,script,[src],[href],[tabindex]').length,
+  overflow:body.scrollWidth>body.clientWidth||document.documentElement.scrollWidth>innerWidth,
+  controls:['Externe afbeeldingen laden','Alles laden','Afbeeldingsbeschrijvingen tonen'].every(t=>!!button(t)),
+  connections:await connections(),requests:await requests()};
+}
+
 export async function unhintedCrop(theme,lang='en'){
  await openNewsletter('unhinted',false,lang);
  document.documentElement.dataset.theme=theme;
@@ -147,12 +164,10 @@ export async function unhintedCrop(theme,lang='en'){
  const rows=[...body.querySelectorAll('tr')].filter(row=>row.cells.length>1&&row.querySelector('.mail-image-placeholder'));
  const geometry=rows.map(row=>{
   const slot=row.querySelector('.mail-image-placeholder'),cell=slot.closest('td'),table=cell.closest('table');
-  const range=document.createRange();range.selectNodeContents(slot);
   const title=row.querySelector('strong')??row.querySelector('th');
-  const alt=slot.querySelector('.mail-image-alt')??slot;
-  const info={height:box(row).height,cell:box(cell).width,slotWidth:box(slot).width,lines:new Set([...range.getClientRects()].map(r=>r.y)).size,
+  const info={height:box(row).height,cell:box(cell).width,slotWidth:box(slot).width,
    sameRow:box(cell).top===box(title.closest('td,th')).top,fg:getComputedStyle(title).color,bg:getComputedStyle(table).backgroundColor,
-   backgroundImage:getComputedStyle(table).backgroundImage,alt:alt.textContent,altWidth:alt.clientWidth,altScrollWidth:alt.scrollWidth};
+   backgroundImage:getComputedStyle(table).backgroundImage,alt:slot.getAttribute('aria-label'),text:slot.innerText,iconCount:slot.querySelectorAll('svg').length};
   slot.style.display='none';info.withoutLabel=box(row).height;slot.style.removeProperty('display');
   return info;
  });
@@ -162,7 +177,7 @@ export async function unhintedCrop(theme,lang='en'){
   aligns:[...grid.tBodies[0].rows[0].cells].map(c=>getComputedStyle(c).textAlign),
   tracks:head.map(c=>box(c).width),width:box(grid).width,
   aligned:[...grid.tBodies[0].rows].every(r=>[...r.cells].every((c,i)=>box(c).x===box(head[i]).x))},
-  standalone:[...body.querySelectorAll('p .mail-image-placeholder,tr:has(>td:only-child) .mail-image-placeholder')].map(e=>[e.textContent,e.checkVisibility(),getComputedStyle(e).position]),
+  standalone:[...body.querySelectorAll('p .mail-image-placeholder,tr:has(>td:only-child) .mail-image-placeholder')].map(e=>[e.getAttribute('aria-label'),e.checkVisibility(),getComputedStyle(e).position,e.innerText,e.querySelectorAll('svg').length]),
   reasons:[...reader().querySelectorAll('.image-source-summary li')].map(e=>e.textContent),
   overflow:body.scrollWidth>body.clientWidth||document.documentElement.scrollWidth>innerWidth,requests:await requests(),connections:await connections()};
 }
@@ -271,7 +286,7 @@ export async function editionBefore(){
  assert(body.scrollWidth<=body.clientWidth+1&&document.documentElement.scrollWidth<=innerWidth,'newsletter overflows');
  return {...pre,point:control?gardenPoint():null,oldWarnings:(text.match(/Image source is not supported/g)??[]).length,
   summary:reader().querySelector('.image-source-summary li')?.textContent??null,
-  alt:['Orchard at dawn','Market stalls','Walking map','Community badge'].every(alt=>body.textContent.includes(alt))};
+  alt:['Orchard at dawn','Market stalls','Walking map','Community badge'].every(alt=>[...body.querySelectorAll('.mail-image-placeholder')].some(p=>p.getAttribute('aria-label')?.includes(alt)))};
 }
 
 export async function editionReopen(){
@@ -289,8 +304,8 @@ export async function gardenBefore(baseline){
  await openNewsletter(baseline?'garden':'unavailable',baseline);
  if(!baseline){
   const unsupported=reader().querySelector('.formatted-mail');
-  assert(unsupported&&unsupported.querySelectorAll('.mail-image-placeholder').length===1&&!reader().querySelector('.image-controls'),'image-only fallback missing or offered consent: '+reader().textContent);
-  assert(unsupported.textContent.includes('Inline image is not displayed')&&reader().querySelector('.image-source-summary li')?.textContent==='3 images have unsupported sources.'&&!unsupported.textContent.includes('Remote image'),'unsupported images mislabeled');
+  assert(unsupported?.checkVisibility()&&unsupported.querySelectorAll('.mail-image-placeholder').length===4&&!reader().querySelector('.image-controls'),'image-only fallback missing or offered consent: '+reader().textContent);
+  assert(unsupported.querySelector('[aria-label="Inline image is not displayed"]')&&reader().querySelector('.image-source-summary li')?.textContent==='3 images have unsupported sources.'&&!unsupported.textContent.trim(),'unsupported images mislabeled');
   click('← Back to list');
   await open('garden');
  }
@@ -302,7 +317,7 @@ export async function gardenBefore(baseline){
  if(!baseline){
   assert(control.classList.contains('primary')&&controls.getBoundingClientRect().bottom<body.getBoundingClientRect().top,'action not prominent above message');
   assert(body.querySelector('table[role=presentation][width="640"]')&&body.querySelector('caption')?.textContent==='November checklist'&&body.querySelector('th').colSpan===2,'newsletter table semantics lost');
-  assert(body.textContent.includes('Inline image is not displayed — Club logo')&&body.textContent.includes('Remote image blocked — Winter garden banner'),'inline and remote states conflated');
+  assert(body.querySelector('[aria-label="Inline image is not displayed — Club logo"]')&&body.querySelector('[aria-label="Remote image blocked — Winter garden banner"]'),'inline and remote states conflated');
   assert(body.scrollWidth<=body.clientWidth+1&&document.documentElement.scrollWidth<=innerWidth,'newsletter overflows');
  }
  control.click();await pause(200);

@@ -16,6 +16,14 @@ export const preconsentMarkup=(origin:string)=>`<style>@import url('${origin}/sh
 export const preconsentMail=(origin:string)=>`From: bulletin@example.test\r\nSubject: Reader preconsent\r\nMIME-Version: 1.0\r\nContent-Type: multipart/alternative; boundary=alt\r\n\r\n--alt\r\nContent-Type: text/plain\r\n\r\nSynthetic observatory bulletin.\r\n--alt\r\nContent-Type: text/html; charset=utf-8\r\n\r\n${preconsentMarkup(origin)}\r\n--alt--\r\n`;
 
 export const unhintedAlt='Observatory symbol with a deliberately long unbroken SpectrophotometerCalibrationReference';
+export const iconOnlyMail=(origin:string)=>preconsentMail(origin).replace('Reader preconsent','Reader icons').replace(preconsentMarkup(origin),`
+<h2>Synthetic image slots</h2>
+<table role="presentation" width="100%"><tr><td width="9"><img src="${origin}/repeat.png" alt="Repeated observation"></td><td>Narrow cell text</td></tr></table>
+<table role="presentation" width="100%"><tr><td width="60%"><img src="${origin}/repeat.png" alt="Repeated observation" width="640" height="480"></td><td>Wide cell text</td></tr></table>
+<p><img src="${origin}/repeat.png" alt="Repeated observation"></p>
+<table><caption>Sender caption remains</caption><tr><td>Measured value</td></tr></table>
+<p>Unavailable slots: <img src="cid:unavailable@example.test" alt="Unresolved observation"> <img src="/unavailable.png" alt="Unsupported observation"> <img></p>
+`);
 export const unhintedMail=(origin:string)=>{
  const band='style="background-color:#18263a;color:#f5f9ff;font-size:14px;line-height:20px"';
  const bandTitle='<td style="padding:8px"><strong>Observatory Brief</strong></td>';

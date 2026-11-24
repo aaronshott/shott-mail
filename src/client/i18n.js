@@ -36,6 +36,7 @@ const catalog={
  remoteImage:['Externe afbeelding','Remote image'], remoteImageBlocked:['Externe afbeelding geblokkeerd','Remote image blocked'],
  imagesRequested:['Externe afbeeldingen aangevraagd. Als een afbeelding niet laadt, kan de beschrijving ervoor in de plaats verschijnen.','Remote images requested. If an image fails to load, its description may appear instead.'],
  remoteImageUnavailable:['Externe afbeelding niet beschikbaar','Remote image unavailable'],
+ imageUnavailable:['Afbeelding niet beschikbaar','Image unavailable'],
  inlineImageUnavailable:['Ingesloten afbeelding wordt niet weergegeven','Inline image is not displayed'],
  imageSourceUnavailable:['1 afbeelding heeft een niet-ondersteunde bron.','1 image has an unsupported source.'],
  imageDetails:['Details over overgeslagen afbeeldingen','Skipped image details'],

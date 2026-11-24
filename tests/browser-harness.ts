@@ -9,7 +9,7 @@ import {crc32,deflateSync} from 'node:zlib';
 import {newsletter,imageOnly,missingImage,edition,studio,contrastFixtures,diagnostics,pictureFixtures} from './newsletter-fixture.ts';
 import {headerAsset,headerMail,headerReference,headerReferenceCSS} from './header-fixture.ts';
 import {documentMail,fullCSS,longDocumentMail} from './document-fixture.ts';
-import {preconsentMail,unhintedMail} from './preconsent-fixture.ts';
+import {preconsentMail,unhintedMail,iconOnlyMail} from './preconsent-fixture.ts';
 
 function newsletterPng(){
  const width=640,height=120;
@@ -49,7 +49,7 @@ const imageHost=reader?createHttps({key:readFileSync(join(dir,'mail.key')),cert:
  res.end(headerAsset(req.url??'')??imageBytes);
 }):null;
 let imageOrigin='';
-if(imageHost){imageHost.on('connection',()=>{imageConnections.count++;});const listening=once(imageHost,'listening');imageHost.listen(0,'127.0.0.1');await listening;imageOrigin=`https://images.example.test:${(imageHost.address() as {port:number}).port}`;mail!.seedReader(imageOrigin,full?[documentMail(imageOrigin),longDocumentMail(imageOrigin)]:garden?[newsletter(imageOrigin),imageOnly(imageOrigin),missingImage(imageOrigin),edition(imageOrigin),studio(imageOrigin),...contrastFixtures(),...pictureFixtures(imageOrigin),headerMail(imageOrigin),preconsentMail(imageOrigin),unhintedMail(imageOrigin)]:process.argv.includes('--diagnostics')?[diagnostics(imageOrigin),missingImage(imageOrigin)]:[]);}
+if(imageHost){imageHost.on('connection',()=>{imageConnections.count++;});const listening=once(imageHost,'listening');imageHost.listen(0,'127.0.0.1');await listening;imageOrigin=`https://images.example.test:${(imageHost.address() as {port:number}).port}`;mail!.seedReader(imageOrigin,full?[documentMail(imageOrigin),longDocumentMail(imageOrigin)]:garden?[newsletter(imageOrigin),imageOnly(imageOrigin),missingImage(imageOrigin),edition(imageOrigin),studio(imageOrigin),...contrastFixtures(),...pictureFixtures(imageOrigin),headerMail(imageOrigin),preconsentMail(imageOrigin),unhintedMail(imageOrigin),iconOnlyMail(imageOrigin)]:process.argv.includes('--diagnostics')?[diagnostics(imageOrigin),missingImage(imageOrigin)]:[]);}
 if(replySubjects)mail?.seedReplySubjects();
 if(process.argv.includes('--context'))mail?.seedSent();
 const c={dbPath:join(dir,'app.sqlite'),key:randomBytes(32),password:randomBytes(24).toString('base64url'),origin:'http://127.0.0.1',secureCookie:full,allowedMail:mail?.allowedMail??[],sessionMs:3600000,staticRoot:resolve('dist/client'),...(mail?{mailMode:'fixture' as const,ca:mail.ca,timeoutMs:3000}:{}),...(folders?{pageSize:1}:{})};
