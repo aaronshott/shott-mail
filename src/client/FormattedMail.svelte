@@ -2,7 +2,7 @@
  import {onMount,tick} from 'svelte';
  import {boundedInteger,safeFormattingTags,imageRejections,imageURL,maxReaderImages,tableHeaderScope,tableWidth} from '../reader-policy.ts';
  import {applyPresentation,cellPadding} from '../reader-presentation.ts';
- import {imageFrameDocument} from '../image-frame.ts';
+ import {imageFrameDocument,unavailableImagePath} from '../image-frame.ts';
  import {protectReaderContrast} from './reader-contrast.ts';
 
  let {body,text,t,requestDocument,subject,messageActions}=$props();
@@ -28,7 +28,7 @@
   svg.setAttribute('focusable','false');
   // Fixed app geometry, not sender SVG. Gaps keep the slash distinct.
   const shape=document.createElementNS(svgNS,'path');
-  shape.setAttribute('d','M3 7v9h9m5-3V4H8M4 14l3-3 2 2m3-4 1-1 3 3M2 2l16 16');
+  shape.setAttribute('d',unavailableImagePath);
   shape.setAttribute('fill','none');
   shape.setAttribute('stroke','currentColor');
   shape.setAttribute('stroke-width','1.8');
@@ -210,7 +210,7 @@
    frame.setAttribute('credentialless',''); // extra isolation where supported; not credentials:omit
    frame.referrerPolicy='no-referrer';
    frame.title=alt||t('remoteImage');
-   // The sandbox is opaque: use native image alt fallback rather than treating frame load as image success.
+   // The sandbox stays opaque; fallback paint and alt live inside the frame.
    frame.srcdoc=imageFrameDocument(url,alt||t('remoteImageUnavailable'));
    if(slot.classList.contains('mail-image-in-row'))slot.closest('td').classList.remove('mail-image-cell');
    for(const attr of ['role','aria-label'])slot.removeAttribute(attr);

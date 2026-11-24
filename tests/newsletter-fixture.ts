@@ -32,6 +32,14 @@ export function missingImage(origin:string){
  return headers('Reader missing')+`Content-Type: text/html; charset=utf-8\r\n\r\n<h1>Monthly notice</h1><img src="${origin}/missing.png" alt="Archive illustration">\r\n`;
 }
 
+export function imageLoadFixtures(origin:string){
+ const valid=`<img src="${origin}/alpha.svg" width="96" height="48" alt="Clear &amp; blue illustration">`;
+ const missing=`<img src="${origin}/missing.png" width="96" height="48" alt="Archive illustration">`;
+ const invalid=`<img src="${origin}/invalid.png" width="96" height="48" alt="Unreadable illustration">`;
+ return [valid,missing,valid+missing+invalid].map((markup,i)=>headers(`Reader image-load-${i}`)+
+  `Content-Type: text/html; charset=utf-8\r\n\r\n<h1>Image load test</h1><p style="background-color:#bce8cc;color:#18342a">${markup}</p>\r\n`);
+}
+
 export function diagnostics(origin:string){
  const relative='<img src="/private-fixture-token.png">'.repeat(13);
  const variants=Array.from({length:9},(_,i)=>`${origin}/private-fixture-token.png ${i+1}w`).join(', ');

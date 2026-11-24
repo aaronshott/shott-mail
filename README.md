@@ -295,12 +295,14 @@ als bewijs; een scriptbestand of `compose config` is geen PASS.
   Maximaal 48 beeldposities en 48 unieke beeldbestemmingen per weergave.
   CID, data-URLs en padrelatieve URL's worden niet weergegeven. Uitklapbare
   details tonen alleen aantallen per reden. Aangevraagde beelden kunnen
-  alsnog mislukken; de browser toont zo mogelijk een gebroken beeld en de
-  beschrijving. De app leest de sandbox niet uit en telt geen laadfouten.
-- De beeldframes bevatten alleen een door de app opgebouwde afbeelding en vaste
-  opmaak. De sandbox staat geen scripts, same-origin-toegang, formulieren of
-  pop-ups toe. De app voegt geen sessiegegevens, CSRF-token, IMAP/SMTP-inlog of
-  Authorization-header toe. App-cookies blijven HttpOnly en SameSite=Strict
+  alsnog mislukken. Chromium toont dan een lokaal doorgestreept pictogram in
+  het beeldframe; de alternatieve tekst blijft beschikbaar voor hulptechnologie.
+  Andere browserengines kunnen hun eigen terugvalweergave gebruiken. De app
+  leest de sandbox niet uit en telt geen laadfouten.
+- De beeldframes bevatten alleen de gevraagde afbeelding en vaste app-opmaak
+  met een lokaal pictogram. De sandbox staat geen scripts, same-origin-toegang,
+  formulieren of pop-ups toe. De app voegt geen sessiegegevens, CSRF-token,
+  IMAP/SMTP-inlog of Authorization-header toe. App-cookies blijven HttpOnly en SameSite=Strict
   (Secure via de bestaande HTTPS-configuratie). `credentialless` biedt extra
   compartimentering waar ondersteund; het is geen universele `credentials: omit`.
   Browserbeleid bepaalt of bijvoorbeeld cookies van de beeldhost of eerder

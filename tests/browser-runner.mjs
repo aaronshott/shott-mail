@@ -8,9 +8,10 @@ import {runTreeStyle} from './browser-tree-style.mjs';
 import {runHeader} from './browser-header.mjs';
 import {runFullReader} from './browser-full-reader.mjs';
 import {runImageDescriptions} from './browser-image-descriptions.mjs';
+import {runImageLoad} from './browser-image-load.mjs';
 import {editionImages,picturePaths} from './newsletter-fixture.ts';
 const chrome=process.argv[2];if(!chrome)throw Error('Pass an absolute Chrome/Chromium path');
-const workflows=process.argv.length>3?process.argv.slice(3):['folders','context','composer','b1','users','settings','reply-nl','reply-en','reader-nl','reader-en','diagnostics-nl','diagnostics-en','newsletter','edition','studio','picture','contrast','header-light','header-dark','tree-light','tree-dark','full-reader','preconsent-light','preconsent-dark','unhinted-light','unhinted-dark','image-descriptions-en','image-descriptions-nl','icon-only-light','icon-only-dark'];
+const workflows=process.argv.length>3?process.argv.slice(3):['folders','context','composer','b1','users','settings','reply-nl','reply-en','reader-nl','reader-en','diagnostics-nl','diagnostics-en','newsletter','edition','studio','picture','contrast','header-light','header-dark','tree-light','tree-dark','full-reader','preconsent-light','preconsent-dark','unhinted-light','unhinted-dark','image-descriptions-en','image-descriptions-nl','icon-only-light','icon-only-dark','image-load'];
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 await mkdir('.test-data',{recursive:true,mode:0o700});
 const profile=await mkdtemp(resolve('.test-data/browser-chrome-'));
@@ -32,9 +33,10 @@ try{
   const descriptions=kind.startsWith('image-descriptions-')?kind.slice(-2):null;
   const iconOnly=kind.startsWith('icon-only-');
   const preconsent=iconOnly?kind.slice(10):descriptions?(descriptions==='nl'?'dark':'light'):unhinted?kind.slice(9):kind.startsWith('preconsent-')?kind.slice(11):null;
-  const full=kind==='full-reader',studio=kind==='studio',edition=kind==='edition',picture=kind==='picture',garden=kind==='newsletter'||kind==='contrast'||edition||studio||picture||header||preconsent,needsImage=readerLocale||garden||diagnosticsLocale||full;
+  const imageLoad=kind==='image-load';
+  const full=kind==='full-reader',studio=kind==='studio',edition=kind==='edition',picture=kind==='picture',garden=kind==='newsletter'||kind==='contrast'||edition||studio||picture||header||preconsent,needsImage=readerLocale||garden||diagnosticsLocale||full||imageLoad;
   const treeTheme=kind==='tree-light'?'light':kind==='tree-dark'?'dark':null;
-  const h=start(process.execPath,['tests/browser-harness.ts',...(full?['--full-reader']:garden?['--newsletter']:diagnosticsLocale?['--reader','--diagnostics']:readerLocale?['--reader']:replyLocale?['--reply-subjects']:kind==='context'?['--folders','--context']:treeTheme?['--folders','--tree-style']:kind==='settings'?['--folders']:['folders','composer'].includes(kind)?[`--${kind}`]:[])]);
+  const h=start(process.execPath,['tests/browser-harness.ts',...(full?['--full-reader']:imageLoad?['--reader','--image-load']:garden?['--newsletter']:diagnosticsLocale?['--reader','--diagnostics']:readerLocale?['--reader']:replyLocale?['--reply-subjects']:kind==='context'?['--folders','--context']:treeTheme?['--folders','--tree-style']:kind==='settings'?['--folders']:['folders','composer'].includes(kind)?[`--${kind}`]:[])]);
   let origin,imageOrigin,tab,ws,harnessOutput='';h.stdout.on('data',chunk=>{harnessOutput+=chunk;const match=/BROWSER_HARNESS (https?:\/\/127\.0\.0\.1:\d+)(?: (https:\/\/images\.example\.test:\d+))?\r?\n/.exec(harnessOutput);if(match)[,origin,imageOrigin]=match;});
   try{
    await poll(()=>origin);tab=await (await fetch(endpoint+'/json/new?about:blank',{method:'PUT'})).json();
@@ -61,11 +63,11 @@ try{
     if(method==='Network.requestWillBeSent'){
      const url=new URL(params.request.url);
      if((descriptions||iconOnly)&&['https:','http:'].includes(url.protocol))traffic.push(url.href);
-     if(preconsent&&['https:','http:'].includes(url.protocol)&&url.origin!==origin)external.push(url.href);
+     if((preconsent||imageLoad)&&['https:','http:'].includes(url.protocol)&&url.origin!==origin)external.push(url.href);
      if([imageOrigin,imageOrigin.replace('images.','cdn.')].includes(url.origin))observed.push(url.pathname);
     }
    };
-   await call('Emulation.setDeviceMetricsOverride',{width:mobile?(replyLocale||readerLocale?320:390):(header||full||preconsent?1600:1280),height:mobile?844:900,deviceScaleFactor:mobile&&!header&&!full&&!preconsent?3:1,mobile});
+   await call('Emulation.setDeviceMetricsOverride',{width:mobile?(replyLocale||readerLocale?320:390):(header||full||preconsent||imageLoad?1600:1280),height:mobile?844:900,deviceScaleFactor:mobile&&!header&&!full&&!preconsent&&!imageLoad?3:1,mobile});
    await call('Emulation.setTouchEmulationEnabled',{enabled:mobile});
    if(treeTheme||kind==='settings')await call('Emulation.setEmulatedMedia',{features:[{name:'prefers-color-scheme',value:treeTheme??'dark'}]});
    if(needsImage){
@@ -87,7 +89,7 @@ try{
    else if(treeTheme)record.result=await runTreeStyle({call,evaluate,poll,mobile,theme:treeTheme,baseline:process.env.FOLDER_TREE_BASELINE==='1',screenshots:process.env.FOLDER_TREE_SCREENSHOTS});
    else if(kind==='context')record.result=await evaluate("import('/__test_folder_context.js').then(m=>m.runContext())",true);
    else if(replyLocale)record.result=await evaluate(`import('/__test_reply_subjects.js').then(m=>m.runReplySubjects(${JSON.stringify(replyLocale)}))`,true);
-   else if(garden||diagnosticsLocale||full){
+   else if(garden||diagnosticsLocale||full||imageLoad){
     const baseline=process.env.NEWSLETTER_BASELINE==='1',dir=full?process.env.FULL_READER_SCREENSHOTS:process.env.NEWSLETTER_SCREENSHOTS;
     const run=(method,arg='')=>evaluate(`import('/__test_reader.js').then(m=>m.${method}(${arg}))`,true);
     const shot=async (name,viewportOnly=false)=>{
@@ -102,7 +104,9 @@ try{
      if(mobile){await call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point]});await call('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});}
      else for(const type of ['mousePressed','mouseReleased'])await call('Input.dispatchMouseEvent',{type,...point,button:'left',clickCount:1});
     };
-    if(iconOnly){
+    if(imageLoad){
+     record.result=await runImageLoad({call,evaluate,poll,run,gesture,imageFrames,external,shot,record});
+    }else if(iconOnly){
      const state=record.before=await run('iconOnlyCrop',JSON.stringify(preconsent));
      await shot(kind,true);
      record.externalRequests=external;
@@ -187,7 +191,7 @@ try{
      await gesture(point);
      record.failedImage=await poll(async()=>{
       const [session]=imageFrames.values();if(!session)return;
-      return evaluate(`(() => {const i=document.querySelector('img');return i?.complete&&!i.naturalWidth&&i.alt==='Archive illustration'?{nativeFallback:true}:null;})()`,false,session);
+      return evaluate(`(() => {const i=document.querySelector('img');return i?.complete&&!i.naturalWidth&&i.alt==='Archive illustration'?{failedWithAlt:true}:null;})()`,false,session);
      });
      record.result=await run('diagnosticsAfter',lang);
     }else if(picture){

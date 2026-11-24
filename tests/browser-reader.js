@@ -410,6 +410,29 @@ export async function diagnosticsAfter(lang){
  return {passed:true,note,observed};
 }
 
+export async function imageLoadBefore(index){
+ if(index===0){
+  await idle();click('Instellingen');await pause(0);
+  const prefs=document.querySelectorAll('main select');
+  set(prefs[0],'en');set(prefs[1],'dark');set(prefs[2],'html');
+  await pause(0);click('Instellingen opslaan');await idle();click('Back');
+ }else click('← Back to list');
+ await open(`image-load-${index}`);
+ const control=button('Load remote images');
+ assert(control&&document.getElementById(control.getAttribute('aria-describedby'))?.textContent.includes('IP address'),'missing global privacy notice');
+ control.click();await pause(200);
+ const body=reader().querySelector('.formatted-mail');
+ assert(!body.querySelector('iframe,img')&&body.querySelectorAll('.mail-image-placeholder>svg').length===[1,1,3][index],'preconsent or reset slots missing');
+ return {point:gardenPoint(),requests:await requests(),connections:await connections()};
+}
+
+export async function imageLoadReset(){
+ click('← Back to list');await open('image-load-2');await pause(200);
+ const body=reader().querySelector('.formatted-mail');
+ assert(button('Load remote images')&&!body.querySelector('iframe,img')&&body.querySelectorAll('.mail-image-placeholder[role=img]>svg').length===3,'reopening mixed message retained consent');
+ return {requests:await requests(),connections:await connections()};
+}
+
 async function picturePayload(){
  const endpoint=performance.getEntriesByType('resource').findLast(e=>new URL(e.name).pathname.startsWith('/api/messages/'));
  const response=await fetch(endpoint.name);assert(response.ok,'real IMAP message API failed');

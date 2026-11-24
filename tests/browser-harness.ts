@@ -6,7 +6,7 @@ import {createServer as createHttps} from 'node:https';
 import {request as httpRequest} from 'node:http';
 import {once} from 'node:events';
 import {crc32,deflateSync} from 'node:zlib';
-import {newsletter,imageOnly,missingImage,edition,studio,contrastFixtures,diagnostics,pictureFixtures} from './newsletter-fixture.ts';
+import {newsletter,imageOnly,missingImage,edition,studio,contrastFixtures,diagnostics,pictureFixtures,imageLoadFixtures} from './newsletter-fixture.ts';
 import {headerAsset,headerMail,headerReference,headerReferenceCSS} from './header-fixture.ts';
 import {documentMail,fullCSS,longDocumentMail} from './document-fixture.ts';
 import {preconsentMail,unhintedMail,iconOnlyMail} from './preconsent-fixture.ts';
@@ -45,11 +45,13 @@ const imageHost=reader?createHttps({key:readFileSync(join(dir,'mail.key')),cert:
   res.writeHead(302,{Location:imageOrigin.replace('images.example.test','cdn.example.test')+'/final.png','Cache-Control':'no-store'});res.end();return;
  }
  if(req.url==='/missing.png'){res.writeHead(404,{'Cache-Control':'no-store'});res.end();return;}
+ if(req.url==='/alpha.svg'){res.writeHead(200,{'Content-Type':'image/svg+xml','Cache-Control':'no-store'}).end('<svg xmlns="http://www.w3.org/2000/svg" width="96" height="48"><rect x="40" width="40" height="48" fill="#164fff"/></svg>');return;}
+ if(req.url==='/invalid.png'){res.writeHead(200,{'Content-Type':'image/png','Cache-Control':'no-store'}).end('not PNG bytes');return;}
  res.writeHead(200,{'Content-Type':'image/png','Cache-Control':'no-store'}); // deliberately no CORS
  res.end(headerAsset(req.url??'')??imageBytes);
 }):null;
 let imageOrigin='';
-if(imageHost){imageHost.on('connection',()=>{imageConnections.count++;});const listening=once(imageHost,'listening');imageHost.listen(0,'127.0.0.1');await listening;imageOrigin=`https://images.example.test:${(imageHost.address() as {port:number}).port}`;mail!.seedReader(imageOrigin,full?[documentMail(imageOrigin),longDocumentMail(imageOrigin)]:garden?[newsletter(imageOrigin),imageOnly(imageOrigin),missingImage(imageOrigin),edition(imageOrigin),studio(imageOrigin),...contrastFixtures(),...pictureFixtures(imageOrigin),headerMail(imageOrigin),preconsentMail(imageOrigin),unhintedMail(imageOrigin),iconOnlyMail(imageOrigin)]:process.argv.includes('--diagnostics')?[diagnostics(imageOrigin),missingImage(imageOrigin)]:[]);}
+if(imageHost){imageHost.on('connection',()=>{imageConnections.count++;});const listening=once(imageHost,'listening');imageHost.listen(0,'127.0.0.1');await listening;imageOrigin=`https://images.example.test:${(imageHost.address() as {port:number}).port}`;mail!.seedReader(imageOrigin,full?[documentMail(imageOrigin),longDocumentMail(imageOrigin)]:process.argv.includes('--image-load')?imageLoadFixtures(imageOrigin):garden?[newsletter(imageOrigin),imageOnly(imageOrigin),missingImage(imageOrigin),edition(imageOrigin),studio(imageOrigin),...contrastFixtures(),...pictureFixtures(imageOrigin),headerMail(imageOrigin),preconsentMail(imageOrigin),unhintedMail(imageOrigin),iconOnlyMail(imageOrigin)]:process.argv.includes('--diagnostics')?[diagnostics(imageOrigin),missingImage(imageOrigin)]:[]);}
 if(replySubjects)mail?.seedReplySubjects();
 if(process.argv.includes('--context'))mail?.seedSent();
 const c={dbPath:join(dir,'app.sqlite'),key:randomBytes(32),password:randomBytes(24).toString('base64url'),origin:'http://127.0.0.1',secureCookie:full,allowedMail:mail?.allowedMail??[],sessionMs:3600000,staticRoot:resolve('dist/client'),...(mail?{mailMode:'fixture' as const,ca:mail.ca,timeoutMs:3000}:{}),...(folders?{pageSize:1}:{})};
