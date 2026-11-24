@@ -46,7 +46,7 @@
  async function focusView(stamp=navigation){await tick();if(logged&&stamp===navigation)document.querySelector('.workspace h1')?.focus();}
  function goView(next,preserveRows=false){enter(next,preserveRows);mobileNav=false;return focusView();}
  function toggleMobile(){mobileNav=!mobileNav;}
- function closeNavigation(e){if(e.key!=='Escape'||!mobileNav||!matchMedia('(max-width:760px)').matches)return;e.preventDefault();mobileNav=false;navToggle?.focus();}
+ function closeNavigation(e){if(e.key!=='Escape'||!mobileNav||!matchMedia('(max-width:760px)').matches||document.querySelector('.full-reader-dialog[open]'))return;e.preventDefault();mobileNav=false;navToggle?.focus();}
  function setAccounts(owned){
   if(explicitAccount&&explicitAccount!=='all'&&!owned.some(a=>a.id===explicitAccount))explicitAccount=null;
   const next=accountFilter(owned,explicitAccount);
@@ -309,9 +309,24 @@
      {#if reader}
       <button onclick={closeReader}>{t('backToList')}</button><span class="tag">{reader.accountLabel} · {reader.address}</span>
       <h2 id="readtitle" tabindex="-1">{reader.subjectMissing?t('noSubject'):reader.subject}</h2><p>{reader.from}</p><p class="note">{t('safeView')}</p>
-      {#if readerFormat==='html'&&reader.formatted}
-       {#key reader}<FormattedMail body={reader.formatted} text={reader.text} {t}/>{/key}
-      {:else}<pre>{reader.text}</pre>{/if}
+      {#if readerFormat==='html'&&(reader.formatted||reader.readerIdentity)}
+       {#key reader}
+        <FormattedMail body={reader.formatted} text={reader.text} {t} requestDocument={reader.readerIdentity?()=>api('/api/reader/document','POST',reader.readerIdentity):null} subject={reader.subjectMissing?t('noSubject'):reader.subject}>
+         {#snippet messageActions()}
+          <p>{reader.from} · {reader.accountLabel} · {reader.address}</p>
+          {#if reader.attachments.length}<p>{t('attachments')}</p>{/if}
+          <div class="actions">
+           <button onclick={closeReader}>{t('backToList')}</button>
+           <button class="primary" onclick={()=>newDraft(reader)} disabled={!!editor&&dirty}>{t('reply')}</button>
+          </div>
+         {/snippet}
+        </FormattedMail>
+       {/key}
+      {:else}
+       {#if readerFormat==='html'&&reader.htmlUnavailable}<p class="note">{t('htmlUnavailable')}</p>
+       {:else if readerFormat!=='html'&&reader.formatted?.images.length}<p class="note">{t('plainImageNote')}</p>{/if}
+       <pre>{reader.text}</pre>
+      {/if}
       {#if reader.attachments.length}<p>{t('attachments')}</p>{/if}
       <button class="primary" onclick={()=>newDraft(reader)} disabled={!!editor&&dirty}>{t('reply')}</button>
      {:else}<p class="empty">{t('chooseMessage')}</p>{/if}

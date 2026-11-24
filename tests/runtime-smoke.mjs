@@ -10,6 +10,8 @@ import {dirname, join, resolve} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {setTimeout as delay} from 'node:timers/promises';
 import {fileURLToPath, pathToFileURL} from 'node:url';
+import {pictureFixtures,picturePaths} from './newsletter-fixture.ts';
+import {preconsentMail} from './preconsent-fixture.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const lines = readFileSync(join(root, 'Dockerfile'), 'utf8').split(/\r?\n/);
@@ -37,6 +39,22 @@ try {
   const installFlags = install[1].split(/\s+/);
   assert.deepEqual(installFlags, ['--omit=dev', '--ignore-scripts']);
   execFileSync('npm', ['ci', ...installFlags, '--offline', '--no-audit', '--no-fund'], {cwd: runtime, stdio: 'inherit'});
+
+  const {parseMessage} = await import(pathToFileURL(join(runtime, 'src/server/inbox.ts')).href);
+  const imageOrigin = 'https://images.example.test';
+  const [picture, empty] = await Promise.all(pictureFixtures(imageOrigin).map(raw => parseMessage(Buffer.from(raw))));
+  assert.deepEqual(picture.formatted?.images, picturePaths.map(path => imageOrigin + path));
+  assert.equal(picture.formatted?.imageRejections, undefined);
+  assert.deepEqual(empty.formatted?.images, []);
+  assert.deepEqual(empty.formatted?.imageRejections, {missing:23});
+  console.log('Staged runtime MIME: 23 selected picture URLs, 23 genuine missing sources.');
+  const {formatted} = await parseMessage(Buffer.from(preconsentMail(imageOrigin)));
+  assert.deepEqual(formatted.images, [imageOrigin+'/fixture-mark.png']);
+  assert.match(formatted.markup, /data-p-background-color="#18263a"/);
+  assert.match(formatted.markup, /<col data-p-width="48%"/);
+  assert.match(formatted.markup, /<th scope="row">North array/);
+  assert.doesNotMatch(formatted.markup, /https?:|url\(|<style|<link|\b(?:href|src|style)=/);
+  console.log('Staged runtime MIME: preconsent colors, columns and row scope retained; only the consent image candidate retained.');
 
   const dbPath = join(runtime, 'data', 'app.sqlite');
   const key = randomBytes(32);
@@ -83,6 +101,14 @@ try {
     const page = await fetch(origin, {signal: AbortSignal.timeout(4000)});
     assert.equal(page.status, 200);
     assert.equal(await page.text(), readFileSync(join(runtime, 'dist/client/index.html'), 'utf8'));
+    const health = await fetch(origin+'/health');
+    assert.equal(page.headers.get('content-security-policy'),health.headers.get('content-security-policy').replace("frame-src 'none'",`frame-src ${origin}/api/reader/document`));
+    const document = await fetch(origin+'/api/reader/document');
+    assert.equal(document.status,401);
+    assert.equal(document.headers.get('content-security-policy'),"sandbox; default-src 'none'; style-src https: 'unsafe-inline'; img-src https:; font-src https:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'");
+    assert.equal(document.headers.get('cache-control'),'no-store');
+    assert.equal(document.headers.get('referrer-policy'),'no-referrer');
+    console.log('Staged runtime reader: exact route policy and unauthenticated rejection passed.');
   } finally {
     if (!exited) {
       server.kill('SIGTERM');

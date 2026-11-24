@@ -129,9 +129,9 @@ export async function startMailFixture(dir:string,folders=false,nested='INBOX/Pr
   behavior,submitted,appended,appendCount:()=>appendAttempts,releaseProvider:()=>{for(const {mail,raw} of delayed.splice(0))mail.push(raw);},
   seedSent:()=>paths.get('work@example.test')!.get(sent)!.push('From: work@example.test\r\nSubject: QA17 Sent row\r\n\r\nSent context only\r\n'),
   seedReplySubjects:()=>paths.get('work@example.test')!.set('INBOX',[undefined,'(Geen onderwerp)','(No subject)','Quarterly report'].map((subject,i)=>`From: sender@example.test\r\n${subject===undefined?'':`Subject: ${subject}\r\n`}\r\nReply fixture ${i}\r\n`)),
-  seedReader:(origin:string)=>{
+  seedReader:(origin:string,extra:string[]=[])=>{
    const rich=(kind:string)=>`From: sender@example.test\r\nSubject: Reader ${kind}\r\nMIME-Version: 1.0\r\nContent-Type: multipart/alternative; boundary=alt\r\n\r\n--alt\r\nContent-Type: text/plain\r\n\r\nPlain ${kind}\r\n--alt\r\nContent-Type: text/html\r\n\r\n<link rel="prefetch" href="${origin}/prefetch"><p>Rich <strong>${kind}</strong> <a href="${origin}/link">Newsletter</a><img src="${origin}/${kind}.png" srcset="${origin}/large.png 2x" alt="Fixture photo">${kind==='work'?`<img src="${origin}/redirect.png" alt="Redirected photo">`:''}</p>\r\n--alt--\r\n`;
-   paths.get('work@example.test')!.set('INBOX',[rich('work'),rich('second'),'From: sender@example.test\r\nSubject: Reader plain\r\n\r\nPlain only <b>literal</b>\r\n']);
+   paths.get('work@example.test')!.set('INBOX',[rich('work'),rich('second'),'From: sender@example.test\r\nSubject: Reader plain\r\n\r\nPlain only <b>literal</b>\r\n',...extra]);
    paths.get('private@example.test')!.set('INBOX',[rich('private')]);
   },
   mailbox:(name:string)=>{const user=`${name}@example.test`,password=passwords.get(user);if(!password)throw new Error('Invalid fixture mailbox');

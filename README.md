@@ -259,9 +259,12 @@ als bewijs; een scriptbestand of `compose config` is geen PASS.
   grote aanvragen zonder het opgeslagen concept te overschrijven.
 - Binnenkomende mail staat per gebruiker standaard op platte tekst. Onder
   Instellingen kan de gebruiker Veilige HTML kiezen (NL/EN); zonder bruikbare
-  HTML blijft de platte tekst zichtbaar. De lezer bouwt alleen eenvoudige opmaak
-  op uit een gesaneerde, inerte tussenrepresentatie; geen interactieve links,
-  formulieren, scripts of meegestuurde opmaakregels/attributen.
+  HTML blijft de platte tekst zichtbaar. De lezer reconstrueert begrensde hints
+  voor onder meer effen kleuren, systeemlettertypen, afmetingen, witruimte en
+  uitlijning. Datatabellen behouden celspans; gemarkeerde presentatietabellen
+  met één rij en twee of drie gewone cellen stapelen in een smalle lezer.
+  Een CTA kan eruitzien zoals bedoeld, maar blijft niet-klikbare tekst. Geen
+  formulieren, scripts, stijlbladen, webfonts, achtergrondbeelden of actieve links.
 - Externe afbeeldingen staan uit tot een expliciete klik/tik in het geopende
   bericht. Er zijn daarvoor geen actieve beeld-URLs of prefetch-hints. De
   toestemming vervalt bij sluiten, navigeren, accountwissel of heropenen en
@@ -269,6 +272,31 @@ als bewijs; een scriptbestand of `compose config` is geen PASS.
   als HTTPS-afbeeldingen, zonder referrer of serverproxy en zonder CORS-eis.
   Ook normale HTTPS-redirects zijn mogelijk. De beeldhost ziet het IP-adres
   en kan bezoekers herkennen aan bijvoorbeeld een unieke URL.
+- **Alles laden** is een afzonderlijke toestemming per geopend HTML-bericht.
+  De browser laadt ook HTTPS-stijlbladen, achtergronden en toegestane webfonts
+  rechtstreeks. Het leesdocument is een scriptloze, opaque sandbox via zowel
+  responsebeleid als frame-attribuut; formulieren, actieve links en andere
+  frames worden niet opgenomen. De veilige weergave en platte tekst blijven
+  buiten het frame beschikbaar. Het document is niet cachebaar en geeft zijn
+  app-URL niet als referrer door. Bij vervolgverzoeken vanuit een extern
+  stylesheet kan de browser wél het adres van dat stylesheet meesturen.
+  Het app-beleid regelt niet de cache, cookies of beschikbaarheid van externe
+  bronnen. Na toestemming kunnen externe hosts het openen registreren.
+- De lezer probeert `img src`, daarna `data-src`, daarna één kandidaat uit een
+  begrensde, volledig gevalideerde `img srcset`. Als die geen bruikbare URL
+  opleveren, kan de eerste directe `img` van een niet-geneste `picture` één
+  URL uit een voorafgaande directe `source srcset` gebruiken. Maximaal acht
+  `source`-elementen vóór de `img`; de eerste geldige declaratie wint en
+  daaruit de kleinste descriptor (maximaal acht kandidaten per declaratie).
+  Alleen ongeconditioneerde bronnen zonder typehint of met een ondersteunde
+  rastertypehint komen in aanmerking; `media` en `sizes` worden niet uitgevoerd.
+  Een lege `img` zonder zo'n expliciete bron blijft onbeschikbaar. Absolute HTTP- en protocolrelatieve bronnen
+  worden uitsluitend als HTTPS geprobeerd; er is geen terugval naar HTTP.
+  Maximaal 48 beeldposities en 48 unieke beeldbestemmingen per weergave.
+  CID, data-URLs en padrelatieve URL's worden niet weergegeven. Uitklapbare
+  details tonen alleen aantallen per reden. Aangevraagde beelden kunnen
+  alsnog mislukken; de browser toont zo mogelijk een gebroken beeld en de
+  beschrijving. De app leest de sandbox niet uit en telt geen laadfouten.
 - De beeldframes bevatten alleen een door de app opgebouwde afbeelding en vaste
   opmaak. De sandbox staat geen scripts, same-origin-toegang, formulieren of
   pop-ups toe. De app voegt geen sessiegegevens, CSRF-token, IMAP/SMTP-inlog of
