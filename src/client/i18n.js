@@ -64,6 +64,8 @@ const catalog={
  htmlUnavailable:['Geen leesbare opgemaakte inhoud beschikbaar.','No readable formatted content is available.'],
  plainImageNote:['Je leest in tekstmodus. De optie om externe afbeeldingen te laden staat alleen in de opgemaakte weergave (Instellingen).','You’re reading in plain-text mode. The option to load remote images is only in formatted view (Settings).'],
  reply:['Beantwoorden','Reply'], chooseMessage:['Selecteer een bericht.','Select a message.'], unread:['Ongelezen','Unread'],
+ forwardText:['Doorsturen als tekst','Forward as text'], forwardedMessage:['Doorgestuurd bericht','Forwarded message'],
+ forwardTextNote:['Alleen tekst wordt overgenomen; opmaak, afbeeldingen en bijlagen worden niet meegestuurd. Vul zelf de ontvanger in.','Only text is carried over; formatting, images and attachments are not included. Enter the recipient yourself.'],
  markRead:['Markeren als gelezen','Mark as read'], messageRead:['Gelezen','Read'],
  compose:['Bericht opstellen','Compose message'], composeNote:['Tekstbericht, één ontvanger. Bewaren gebeurt op Shott Mail. Geen automatische verzending of offline-opslag.','Plain-text message, one recipient. Drafts are stored in Shott Mail. No automatic sending or offline storage.'],
  from:['Van','From'], chooseSender:['Kies bewust een afzender','Choose a sender'], to:['Aan','To'], subject:['Onderwerp','Subject'], message:['Bericht','Message'],

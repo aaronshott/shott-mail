@@ -10,9 +10,10 @@ import {runFullReader} from './browser-full-reader.mjs';
 import {runImageDescriptions} from './browser-image-descriptions.mjs';
 import {runImageLoad} from './browser-image-load.mjs';
 import {runMarkRead} from './browser-mark-read.mjs';
+import {runForward} from './browser-forward.js';
 import {editionImages,picturePaths} from './newsletter-fixture.ts';
 const chrome=process.argv[2];if(!chrome)throw Error('Pass an absolute Chrome/Chromium path');
-const workflows=process.argv.length>3?process.argv.slice(3):['folders','context','mark-read','composer','b1','users','settings','reply-nl','reply-en','reader-nl','reader-en','diagnostics-nl','diagnostics-en','newsletter','edition','studio','picture','contrast','header-light','header-dark','tree-light','tree-dark','full-reader','preconsent-light','preconsent-dark','unhinted-light','unhinted-dark','image-descriptions-en','image-descriptions-nl','icon-only-light','icon-only-dark','image-load'];
+const workflows=process.argv.length>3?process.argv.slice(3):['folders','context','mark-read','composer','b1','users','settings','reply-nl','reply-en','forward-nl','forward-en','reader-nl','reader-en','diagnostics-nl','diagnostics-en','newsletter','edition','studio','picture','contrast','header-light','header-dark','tree-light','tree-dark','full-reader','preconsent-light','preconsent-dark','unhinted-light','unhinted-dark','image-descriptions-en','image-descriptions-nl','icon-only-light','icon-only-dark','image-load'];
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 await mkdir('.test-data',{recursive:true,mode:0o700});
 const profile=await mkdtemp(resolve('.test-data/browser-chrome-'));
@@ -27,6 +28,7 @@ try{
  for(const mobile of [false,true])for(const kind of workflows){
   const record={kind,mobile};results.push(record);
   const replyLocale=kind==='reply-nl'?'nl':kind==='reply-en'?'en':null;
+  const forwardLocale=kind==='forward-nl'?'nl':kind==='forward-en'?'en':null;
   const readerLocale=kind==='reader-nl'?'nl':kind==='reader-en'?'en':null;
   const diagnosticsLocale=kind==='diagnostics-nl'?'nl':kind==='diagnostics-en'?'en':null;
   const header=kind==='header-light'?'light':kind==='header-dark'?'dark':null;
@@ -35,9 +37,9 @@ try{
   const iconOnly=kind.startsWith('icon-only-');
   const preconsent=iconOnly?kind.slice(10):descriptions?(descriptions==='nl'?'dark':'light'):unhinted?kind.slice(9):kind.startsWith('preconsent-')?kind.slice(11):null;
   const imageLoad=kind==='image-load';
-  const full=kind==='full-reader',studio=kind==='studio',edition=kind==='edition',picture=kind==='picture',garden=kind==='newsletter'||kind==='contrast'||edition||studio||picture||header||preconsent,needsImage=readerLocale||garden||diagnosticsLocale||full||imageLoad;
+  const full=kind==='full-reader',studio=kind==='studio',edition=kind==='edition',picture=kind==='picture',garden=kind==='newsletter'||kind==='contrast'||edition||studio||picture||header||preconsent,needsImage=readerLocale||garden||diagnosticsLocale||full||imageLoad||forwardLocale;
   const treeTheme=kind==='tree-light'?'light':kind==='tree-dark'?'dark':null;
-  const h=start(process.execPath,['tests/browser-harness.ts',...(kind==='mark-read'?['--folders','--mark-read']:full?['--full-reader']:imageLoad?['--reader','--image-load']:garden?['--newsletter']:diagnosticsLocale?['--reader','--diagnostics']:readerLocale?['--reader']:replyLocale?['--reply-subjects']:kind==='context'?['--folders','--context']:treeTheme?['--folders','--tree-style']:kind==='settings'?['--folders']:['folders','composer'].includes(kind)?[`--${kind}`]:[])]);
+  const h=start(process.execPath,['tests/browser-harness.ts',...(forwardLocale?['--folders','--forward']:kind==='mark-read'?['--folders','--mark-read']:full?['--full-reader']:imageLoad?['--reader','--image-load']:garden?['--newsletter']:diagnosticsLocale?['--reader','--diagnostics']:readerLocale?['--reader']:replyLocale?['--reply-subjects']:kind==='context'?['--folders','--context']:treeTheme?['--folders','--tree-style']:kind==='settings'?['--folders']:['folders','composer'].includes(kind)?[`--${kind}`]:[])]);
   let origin,imageOrigin,tab,ws,harnessOutput='';h.stdout.on('data',chunk=>{harnessOutput+=chunk;const match=/BROWSER_HARNESS (https?:\/\/127\.0\.0\.1:\d+)(?: (https:\/\/images\.example\.test:\d+))?\r?\n/.exec(harnessOutput);if(match)[,origin,imageOrigin]=match;});
   try{
    await poll(()=>origin);tab=await (await fetch(endpoint+'/json/new?about:blank',{method:'PUT'})).json();
@@ -91,6 +93,7 @@ try{
    else if(kind==='context')record.result=await evaluate("import('/__test_folder_context.js').then(m=>m.runContext())",true);
    else if(kind==='mark-read')record.result=await runMarkRead({call,evaluate,poll,mobile});
    else if(replyLocale)record.result=await evaluate(`import('/__test_reply_subjects.js').then(m=>m.runReplySubjects(${JSON.stringify(replyLocale)}))`,true);
+   else if(forwardLocale)record.result=await runForward({call,evaluate,poll,mobile,locale:forwardLocale,observed});
    else if(garden||diagnosticsLocale||full||imageLoad){
     const baseline=process.env.NEWSLETTER_BASELINE==='1',dir=full?process.env.FULL_READER_SCREENSHOTS:process.env.NEWSLETTER_SCREENSHOTS;
     const run=(method,arg='')=>evaluate(`import('/__test_reader.js').then(m=>m.${method}(${arg}))`,true);

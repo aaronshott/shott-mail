@@ -10,6 +10,9 @@ import {newsletter,imageOnly,missingImage,edition,studio,contrastFixtures,diagno
 import {headerAsset,headerMail,headerReference,headerReferenceCSS} from './header-fixture.ts';
 import {documentMail,fullCSS,longDocumentMail} from './document-fixture.ts';
 import {preconsentMail,unhintedMail,iconOnlyMail} from './preconsent-fixture.ts';
+import {simpleParser} from 'mailparser';
+import {hashSync} from '@node-rs/argon2';
+import {passwordOptions} from '../src/server/schema.ts';
 
 function newsletterPng(){
  const width=640,height=120;
@@ -29,7 +32,8 @@ const markRead=process.argv.includes('--mark-read');
 const replySubjects=process.argv.includes('--reply-subjects');
 const garden=process.argv.includes('--newsletter');
 const full=process.argv.includes('--full-reader');
-const reader=process.argv.includes('--reader')||garden||full;
+const forward=process.argv.includes('--forward');
+const reader=process.argv.includes('--reader')||garden||full||forward;
 const mail=folders||replySubjects||reader||process.argv.includes('--composer')?await startMailFixture(dir,folders,treeStyle?'INBOX/Projects/Travel':undefined):null;
 const imageRequests:{path?:string;cookie:boolean;referer:boolean;authorization:boolean;stylesheetReferrer?:boolean}[]=[];
 const imageConnections:{count:number}={count:0};
@@ -54,9 +58,20 @@ const imageHost=reader?createHttps({key:readFileSync(join(dir,'mail.key')),cert:
 let imageOrigin='';
 if(imageHost){imageHost.on('connection',()=>{imageConnections.count++;});const listening=once(imageHost,'listening');imageHost.listen(0,'127.0.0.1');await listening;imageOrigin=`https://images.example.test:${(imageHost.address() as {port:number}).port}`;mail!.seedReader(imageOrigin,full?[documentMail(imageOrigin),longDocumentMail(imageOrigin)]:process.argv.includes('--image-load')?imageLoadFixtures(imageOrigin):garden?[newsletter(imageOrigin),imageOnly(imageOrigin),missingImage(imageOrigin),edition(imageOrigin),studio(imageOrigin),...contrastFixtures(),...pictureFixtures(imageOrigin),headerMail(imageOrigin),preconsentMail(imageOrigin),unhintedMail(imageOrigin),iconOnlyMail(imageOrigin)]:process.argv.includes('--diagnostics')?[diagnostics(imageOrigin),missingImage(imageOrigin)]:[]);}
 if(replySubjects)mail?.seedReplySubjects();
+if(forward)mail!.seedForward([
+ 'From: Original <sender@example.test>', 'To: work@example.test', 'Subject: Forward source',
+ 'MIME-Version: 1.0', 'Content-Type: multipart/mixed; boundary=mixed', '', '--mixed',
+ 'Content-Type: multipart/alternative; boundary=alt', '', '--alt', 'Content-Type: text/plain', '',
+ 'Exact folder body <b>literal</b>', '--alt', 'Content-Type: text/html', '',
+ `<p>Rich folder body</p><img src="${imageOrigin}/forward.png" alt="Synthetic photo">`, '--alt--',
+ '--mixed', 'Content-Type: text/plain', 'Content-Disposition: attachment; filename=fixture.txt', '',
+ 'Do not forward this attachment', '--mixed--', ''
+].join('\r\n'));
 if(process.argv.includes('--context'))mail?.seedSent();
 const c={dbPath:join(dir,'app.sqlite'),key:randomBytes(32),password:randomBytes(24).toString('base64url'),origin:'http://127.0.0.1',secureCookie:full,allowedMail:mail?.allowedMail??[],sessionMs:3600000,staticRoot:resolve('dist/client'),...(mail?{mailMode:'fixture' as const,ca:mail.ca,timeoutMs:3000}:{}),...(folders?{pageSize:1}:{})};
 const store=new Store(c.dbPath,c.key,c.password);
+const otherPassword=forward?randomBytes(24).toString('base64url'):null;
+if(otherPassword)store.db.prepare("INSERT INTO users(login,password_hash,role) VALUES('forward-other',?,'user')").run(hashSync(otherPassword,passwordOptions));
 for(const label of ['Werk','Privé']){
  const user=label==='Werk'?'work':'private';
  if(mail){const {imap:{password:i,...imap},smtp:{password:s,...smtp},address}=mail.mailbox(user);
@@ -66,6 +81,17 @@ for(const label of ['Werk','Privé']){
  else store.putAccount(1,randomUUID(),{label,address:`${user}@example.test`,imap:{host:'mail.invalid',port:993,tls:'implicit',user},smtp:{host:'mail.invalid',port:465,tls:'implicit',user}},{imap:randomBytes(24).toString('hex'),smtp:randomBytes(24).toString('hex')});
 }store.close();
 const app=await buildApp(c);
+if(forward&&mail){
+ app.get('/__test_forward_other',async(_req,reply)=>{
+  const result=await app.inject({method:'POST',url:'/api/login',headers:{origin:c.origin},payload:{login:'forward-other',password:otherPassword}});
+  reply.header('Set-Cookie',result.headers['set-cookie']!);return reply.redirect('/');
+ });
+ app.post('/__test_forward_lose_ack',async()=>{mail.behavior.smtpLost=true;return {armed:true};});
+ app.get('/__test_forward_deliveries',async()=>Promise.all(mail.submitted.map(async raw=>{
+  const parsed=await simpleParser(raw,{skipTextToHtml:true});
+  return {from:parsed.from?.text,to:parsed.to&&!Array.isArray(parsed.to)?parsed.to.text:null,subject:parsed.subject,text:parsed.text,html:parsed.html,attachments:parsed.attachments.length};
+ })));
+}
 if(markRead&&mail){
  app.post('/__test_reject_seen',async()=>{mail.behavior.store='reject';return {armed:true};});
  app.get('/__test_seen_writes',async()=>mail.stores);

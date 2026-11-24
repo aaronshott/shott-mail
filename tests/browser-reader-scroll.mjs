@@ -124,7 +124,7 @@ export async function runReaderScroll({call,evaluate,poll,child,run,gesture,mobi
   return {hidden:getComputedStyle(f).visibility,inert:f.inert,info:!p.hidden,range:p.scrollHeight-p.clientHeight}})()`);
  assert.deepEqual({...state,range:0},{hidden:'hidden',inert:true,info:true,range:0});
  assert.ok(state.range>0);
- const actions='.full-reader-info .actions';
+ const actions='.full-reader-info .actions',reply=`${actions} .reply-action`;
  // Use only the options pane scroll range, then reveal the original plain text.
  const panelPoint=smallPoint;
  const panelGesture=async selector=>{
@@ -183,9 +183,9 @@ export async function runReaderScroll({call,evaluate,poll,child,run,gesture,mobi
  await poll(async()=>{const s=await measure();return s?.image===380&&s.y===0;});
  await gesture(await pointFor('.full-reader-toolbar [aria-controls]'));
  await poll(()=>evaluate("!document.querySelector('.full-reader-info').hidden"));
- if(mobile)await panelGesture(`${actions} button:last-of-type`);
+ if(mobile)await panelGesture(reply);
  else{
-  const onReply=()=>evaluate(`document.activeElement.matches('${actions} button:last-of-type')`);
+  const onReply=()=>evaluate(`document.activeElement.matches('${reply}')`);
   for(let i=0;i<5&&!await onReply();i++)await press('Tab',9);
   assert.ok(await onReply());
   await press(' ',32);

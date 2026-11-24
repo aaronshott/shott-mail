@@ -111,6 +111,14 @@
   finally{newPassword='';}
  });}
  function newDraft(reply){editor={id:crypto.randomUUID(),accountId:reply?.accountId??(view==='folder'?activeFolder.account:filter==='all'?'':filter),revision:0,to:reply?.replyTo||'',subject:reply&&!reply.subjectMissing?'Re: '+reply.subject:'',text:reply?'\n\n'+reply.text:'',operation:null};dirty=true;observation='';notice='draftUnsaved';return goView('compose');}
+ function forwardDraft(){
+  const row=readerRow;
+  if(busy||dirty||!reader||!row||row.source.owner!==identity||row.source.session!==csrf||reader.accountId!==row.accountId||!accounts.some(a=>a.id===row.accountId))return;
+  const subject=reader.subjectMissing?'':reader.subject;
+  const header=[`----- ${t('forwardedMessage')} -----`,...(reader.from?[`${t('from')}: ${reader.from}`]:[]),...(subject?[`${t('subject')}: ${subject}`]:[])];
+  editor={id:crypto.randomUUID(),accountId:row.accountId,revision:0,to:'',subject:subject?(/^fwd?:/i.test(subject)?subject:`Fwd: ${subject}`):'Fwd:',text:`\n\n${header.join('\n')}\n\n${reader.text}`,operation:null,forwarded:true};
+  dirty=true;error='';observation='';notice='draftUnsaved';return goView('compose');
+ }
  async function save(){
   const draft=editor;
   const r=await api(`/api/drafts/${draft.id}`,'PUT',{accountId:draft.accountId,revision:draft.revision,to:draft.to,subject:draft.subject,text:draft.text});
@@ -325,6 +333,12 @@
     </section>
     <section class="reader" bind:this={readerPane}>
      {#if reader}
+      {#snippet respond()}
+       <div class="actions">
+        <button type="button" class="primary reply-action" onclick={()=>newDraft(reader)} disabled={!!editor&&dirty}>{t('reply')}</button>
+        <button type="button" onclick={forwardDraft} disabled={busy||dirty}>{t('forwardText')}</button>
+       </div>
+      {/snippet}
       <div class="reader-meta"><span class="tag">{reader.accountLabel} · {reader.address}</span>
       <h2 id="readtitle" tabindex="-1">{reader.subjectMissing?t('noSubject'):reader.subject}</h2><p>{reader.from}</p><p class="note">{t('safeView')}</p>
       <button type="button" aria-disabled={busy||!readerRow?.unread} onclick={markRead}>{t(readerRow?.unread?'markRead':'messageRead')}</button>
@@ -335,9 +349,7 @@
          {#snippet messageActions()}
           <p>{reader.from} · {reader.accountLabel} · {reader.address}</p>
           {#if reader.attachments.length}<p>{t('attachments')}</p>{/if}
-          <div class="actions">
-           <button class="primary" onclick={()=>newDraft(reader)} disabled={!!editor&&dirty}>{t('reply')}</button>
-          </div>
+          {@render respond()}
          {/snippet}
         </FormattedMail>
        {/key}
@@ -348,13 +360,14 @@
       {/if}
       <div class="reader-actions">
       {#if reader.attachments.length}<p>{t('attachments')}</p>{/if}
-      <button class="primary" onclick={()=>newDraft(reader)} disabled={!!editor&&dirty}>{t('reply')}</button>
+      {@render respond()}
       </div>
      {:else}<p class="empty">{t('chooseMessage')}</p>{/if}
     </section>
    {:else if view==='compose'&&editor}
     <section class="panel">
      <h1 tabindex="-1">{t('compose')}</h1><p class="note">{t('composeNote')}</p>
+     {#if editor.forwarded}<p class="note">{t('forwardTextNote')}</p>{/if}
      <form onsubmit={e=>{e.preventDefault();send();}} oninput={()=>dirty=true} onchange={()=>dirty=true}>
       <fieldset disabled={!!editor.operation||busy}>
        <label>{t('from')}<select bind:value={editor.accountId} required disabled={editor.revision>0}>

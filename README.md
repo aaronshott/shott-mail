@@ -26,6 +26,11 @@ zoekfunctie, herstelworkflow voor verzending, wachtwoordwijzigings-UI,
 mailboxbeheer of productiehardening. Bijlagen worden alleen genoemd; geen
 schijnknoppen. Snooze en installeerbare PWA blijven verplicht voor v1, buiten B1.
 
+**Doorsturen als tekst** opent een nieuw concept met het bronaccount als
+voorgestelde afzender en een leeg ontvangersveld. Vul één ontvanger in voordat
+je het concept bewaart of verstuurt. Alleen de tekst wordt geciteerd; HTML,
+afbeeldingen en bijlagen gaan niet mee. Openen en bewaren versturen niets.
+
 ### IMAP-mappen en Verzonden
 
 - **Inbox** blijft het bestaande (gecombineerde of gefilterde) INBOX-overzicht.
